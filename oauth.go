@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	conf        *oauth2.Config
-	ctx         context.Context
-	tokenOutput = make(chan string)
+	conf         *oauth2.Config
+	ctx          context.Context
+	tokenOutput  = make(chan string)
+	clientId     = "YOUR CLIENT ID"
+	clientSecret = "YOUR CLIENT SECRET"
 )
 
 func callbackHandler(writer http.ResponseWriter, req *http.Request) {
