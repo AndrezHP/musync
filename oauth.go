@@ -12,9 +12,10 @@ import (
 )
 
 var (
+	tokenOutput  = make(chan string)
+	scopes       = []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
 	conf         *oauth2.Config
 	ctx          context.Context
-	tokenOutput  = make(chan string)
 	clientId     = "YOUR CLIENT ID"
 	clientSecret = "YOUR CLIENT SECRET"
 )
@@ -47,7 +48,7 @@ func fetchAccessToken() {
 	conf = &oauth2.Config{
 		ClientID:     clientId,
 		ClientSecret: clientSecret,
-		Scopes:       []string{"user-read-private", "user-read-email"},
+		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.spotify.com/authorize",
 			TokenURL: "https://accounts.spotify.com/api/token",

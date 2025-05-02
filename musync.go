@@ -1,40 +1,93 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 )
 
-var api = "https://api.spotify.com/"
+const api = "https://api.spotify.com/"
 
 func main() {
 	var token = getAccessToken()
-	fmt.Println("Super cool token: " + token)
 	var userId = getCurrentUserId(token)
 	var playlists = getUserPlaylists(userId, token)
 	fmt.Printf("%s", playlists)
 }
 
 func getCurrentUserId(token string) string {
-	var _ = makeHttpRequest("GET", api, "v1/me", token)
-	// TODO Implement json parsing to get id
-	var userId = "1121551335"
-	return userId
+	var res = makeHttpRequest("GET", api, "v1/me", token)
+
+	var result map[string]interface{}
+	err := json.Unmarshal(res, &result)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if id, ok := result["id"]; ok {
+		return fmt.Sprint(id)
+	} else {
+		return "Oh no"
+	}
 }
 
-func getUserPlaylists(userId string, token string) string {
+func handlePlaylist(playlist Playlist) {
+	// TODO create playlist on other service and add songs
+}
+
+type Playlist struct {
+	Id     string
+	Name   string
+	Length int
+}
+
+type Song struct {
+	Name   string
+	Id     string
+	Artist string
+	Album  string
+}
+
+type Track struct {
+	href  string
+	total int
+}
+
+func getUserPlaylists(userId string, token string) []Playlist {
 	var userPlaylists = fmt.Sprintf("v1/users/%s/playlists", userId)
-	return makeHttpRequest("GET", api, userPlaylists, token)
+	var res = makeHttpRequest("GET", api, userPlaylists, token)
+
+	var result map[string]interface{}
+	err := json.Unmarshal(res, &result)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var playlists []Playlist
+	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
+		fmt.Println(len(lists))
+		for i := 0; i < len(lists); i++ {
+			if item, ok := lists[i].(map[string]interface{}); ok {
+				name, _ := item["name"].(string)
+				id, _ := item["id"].(string)
+
+				tracks, _ := item["tracks"].(map[string]interface{})
+				total, _ := tracks["total"].(float64)
+				playlists = append(playlists, Playlist{id, name, int(total)})
+			}
+		}
+	}
+	return playlists
 }
 
-func getPlaylistSongs(listId string) string {
+func getPlaylistSongs(listId string, token string) string {
 	// TODO Implement this
 	return "Yeah man"
 }
 
-func makeHttpRequest(method string, api string, endpoint string, token string) string {
+func makeHttpRequest(method string, api string, endpoint string, token string) []byte {
 	client := &http.Client{}
 	req, err := http.NewRequest(method, api+endpoint, nil)
 	if err != nil {
@@ -56,5 +109,5 @@ func makeHttpRequest(method string, api string, endpoint string, token string) s
 	if err != nil {
 		log.Fatal(err)
 	}
-	return fmt.Sprintf("%s", body)
+	return body
 }
