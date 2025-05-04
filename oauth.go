@@ -9,33 +9,55 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"time"
 )
 
-var (
-	tokenOutput  = make(chan string)
-	scopes       = []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
-	conf         *oauth2.Config
-	ctx          context.Context
-	clientId     = "YOUR CLIENT ID"
-	clientSecret = "YOUR CLIENT SECRET"
-)
+type ApiToken struct {
+	AccessToken  string
+	TokenType    string
+	RefreshToken string
+	Expiry       time.Time
+}
 
-func callbackHandler(writer http.ResponseWriter, req *http.Request) {
+type OAuthHandler struct {
+	Config       *oauth2.Config
+	Ctx          context.Context
+	TokenChannel chan ApiToken
+	ApiUrl       string
+	ApiToken     *ApiToken
+}
+
+func NewOAuthHandler(config *oauth2.Config, ctx context.Context, tokenChannel chan ApiToken, apiUrl string) (OAuthHandler, error) {
+	handler := OAuthHandler{
+		config,
+		ctx,
+		tokenChannel,
+		apiUrl,
+		nil,
+	}
+	initToken := handler.getInitToken()
+	handler.ApiToken = &initToken
+	return handler, nil
+}
+
+func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.Request) {
 	queryParts, _ := url.ParseQuery(req.URL.RawQuery)
 	code := queryParts["code"][0]
-	token, err := conf.Exchange(ctx, code)
-	if err != nil {
-		log.Fatal(err)
-	}
-	tokenOutput <- token.AccessToken
+	token, err := oauth.Config.Exchange(oauth.Ctx, code)
+	check(err)
 
-	client := conf.Client(ctx, token)
-	resp, err := client.Get("https://api.spotify.com/")
-	if err != nil {
-		log.Fatal(err)
-	} else {
-		log.Println("Authentication successful")
+	oauth.TokenChannel <- ApiToken{
+		token.AccessToken,
+		token.TokenType,
+		token.RefreshToken,
+		token.Expiry,
 	}
+
+	client := oauth.Config.Client(oauth.Ctx, token)
+	resp, err := client.Get(oauth.ApiUrl)
+	check(err)
+
+	log.Println("Authentication successful")
 	defer resp.Body.Close()
 
 	msg := "<p><strong>Success!</strong></p>"
@@ -43,35 +65,32 @@ func callbackHandler(writer http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(writer, msg)
 }
 
-func fetchAccessToken() {
-	ctx = context.Background()
-	conf = &oauth2.Config{
-		ClientID:     clientId,
-		ClientSecret: clientSecret,
-		Scopes:       scopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://accounts.spotify.com/authorize",
-			TokenURL: "https://accounts.spotify.com/api/token",
-		},
-		RedirectURL: "http://localhost:8080/callback",
-	}
+func (oauth OAuthHandler) getInitToken() ApiToken {
+	go func() {
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		tlsClient := &http.Client{Transport: transport}
+		oauth.Ctx = context.WithValue(oauth.Ctx, oauth2.HTTPClient, tlsClient)
 
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	tlsClient := &http.Client{Transport: transport}
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, tlsClient)
+		url := oauth.Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
+		log.Println("You will now be taken to your browser for authentication")
+		exec.Command("xdg-open", url).Start()
 
-	url := conf.AuthCodeURL("state", oauth2.AccessTypeOffline)
-	log.Println("You will now be taken to your browser for authentication")
-	exec.Command("xdg-open", url).Start()
-
-	http.HandleFunc("/callback", callbackHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+		http.HandleFunc("/callback", oauth.callbackHandler)
+		log.Fatal(http.ListenAndServe(":8080", nil))
+	}()
+	token := <-oauth.TokenChannel
+	return token
 }
 
-func getAccessToken() string {
-	go fetchAccessToken()
-	token := <-tokenOutput
-	return token
+func (oauth OAuthHandler) getAccessToken() string {
+	if oauth.ApiToken == nil {
+		panic("Token was nil")
+	} else if time.Now().Sub(oauth.ApiToken.Expiry) > 0 {
+		// TODO Implement token refresh
+		return ""
+	} else {
+		return oauth.ApiToken.AccessToken
+	}
 }
