@@ -14,8 +14,9 @@ func main() {
 	check(err)
 
 	var userId = spotifyApi.getCurrentUserId()
-	var playlists = spotifyApi.getUserPlaylists(userId)
-	fmt.Printf("%s", playlists)
+	var playlists = spotifyApi.getUserPlaylists(userId, 0)
+	fmt.Println("%s", playlists)
+	fmt.Println("Number of playlists: ", len(playlists))
 }
 
 func makeHttpRequest(method string, client http.Client, endpoint string) []byte {

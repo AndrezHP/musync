@@ -70,7 +70,7 @@ func (api SpotifyApi) getCurrentUserId() string {
 	}
 }
 
-func (api SpotifyApi) getUserPlaylists(userId string) []Playlist {
+func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 	res, err := api.Client.Get(api.Url + fmt.Sprintf("v1/users/%s/playlists", userId))
 	check(err)
 	responseBody := getBody(res)
@@ -81,7 +81,6 @@ func (api SpotifyApi) getUserPlaylists(userId string) []Playlist {
 
 	var playlists []Playlist
 	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
-		fmt.Println(len(lists))
 		for i := 0; i < len(lists); i++ {
 			if item, ok := lists[i].(map[string]interface{}); ok {
 				name, _ := item["name"].(string)
@@ -92,7 +91,20 @@ func (api SpotifyApi) getUserPlaylists(userId string) []Playlist {
 			}
 		}
 	}
-	return playlists
+
+	newOffset := offset + 50
+	var total int
+	if totalFloat, ok := result["total"].(float64); ok {
+		total = int(totalFloat)
+	} else {
+		panic("Could not find total number of playlists")
+	}
+
+	if newOffset < total { // TODO There might be an off by one here
+		return append(playlists, api.getUserPlaylists(userId, newOffset)...)
+	} else {
+		return playlists
+	}
 }
 
 func (api SpotifyApi) getPlaylistSongs(listId string) string {
