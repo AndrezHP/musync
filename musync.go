@@ -14,8 +14,14 @@ func main() {
 
 	var userId = spotifyApi.getCurrentUserId()
 	var playlists = spotifyApi.getUserPlaylists(userId, 0)
+
 	fmt.Println("%s", playlists)
 	fmt.Println("Number of playlists: ", len(playlists))
+
+	firstPlaylist := playlists[0]
+	var tracks = spotifyApi.getPlaylistTracks(firstPlaylist.Id, 0)
+	fmt.Println("%s", tracks)
+	fmt.Println("Number of tracks: ", len(tracks))
 }
 
 func getBody(response *http.Response) []byte {
