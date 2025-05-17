@@ -42,10 +42,10 @@ func (api TidalApi) getUserPlaylists(userId string) []Playlist {
 	return nil
 }
 
-func (api TidalApi) getPlaylistSongs(listId string) string {
+func (api TidalApi) getPlaylistTracks(listId string) string {
 	return "Yeah man"
 }
 
-func (api TidalApi) searchSong() string {
+func (api TidalApi) searchTrack() string {
 	return "Yeah man"
 }

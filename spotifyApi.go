@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"golang.org/x/oauth2"
 	"net/http"
+	"strconv"
 )
 
 type Playlist struct {
@@ -14,16 +15,11 @@ type Playlist struct {
 	Length int
 }
 
-type Song struct {
-	Name   string
-	Id     string
-	Artist string
-	Album  string
-}
-
 type Track struct {
-	Href  string
-	Total int
+	Id     string
+	Name   string
+	Album  string
+	Artist string
 }
 
 type SpotifyApi struct {
@@ -31,7 +27,7 @@ type SpotifyApi struct {
 	Url    string
 }
 
-func NewSpotifyApi() (SpotifyApi, error) {
+func NewSpotifyApi() SpotifyApi {
 	clientParams := readClientParams(".spotifyParams.json")
 	scopes := []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
 	apiUrl := "https://api.spotify.com/"
@@ -51,7 +47,7 @@ func NewSpotifyApi() (SpotifyApi, error) {
 	return SpotifyApi{
 		client,
 		apiUrl,
-	}, nil
+	}
 }
 
 func (api SpotifyApi) getCurrentUserId() string {
@@ -71,10 +67,18 @@ func (api SpotifyApi) getCurrentUserId() string {
 }
 
 func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
-	res, err := api.Client.Get(api.Url + fmt.Sprintf("v1/users/%s/playlists", userId))
+	endpoint := api.Url + fmt.Sprintf("v1/users/%s/playlists", userId)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	check(err)
-	responseBody := getBody(res)
 
+	params := req.URL.Query()
+	params.Set("offset", strconv.Itoa(offset))
+	req.URL.RawQuery = params.Encode()
+
+	res, err := api.Client.Do(req)
+	check(err)
+
+	responseBody := getBody(res)
 	var result map[string]interface{}
 	err = json.Unmarshal(responseBody, &result)
 	check(err)
@@ -100,17 +104,17 @@ func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 		panic("Could not find total number of playlists")
 	}
 
-	if newOffset < total { // TODO There might be an off by one here
+	if newOffset < total {
 		return append(playlists, api.getUserPlaylists(userId, newOffset)...)
 	} else {
 		return playlists
 	}
 }
 
-func (api SpotifyApi) getPlaylistSongs(listId string) string {
-	return "Yeah man"
+func (api SpotifyApi) getPlaylistTracks(listId string, offset int) []Track {
+	return nil
 }
 
-func (api SpotifyApi) searchSong() string {
+func (api SpotifyApi) searchTrack() string {
 	return "Yeah man"
 }

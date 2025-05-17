@@ -10,17 +10,12 @@ import (
 )
 
 func main() {
-	spotifyApi, err := NewSpotifyApi()
-	check(err)
+	spotifyApi := NewSpotifyApi()
 
 	var userId = spotifyApi.getCurrentUserId()
 	var playlists = spotifyApi.getUserPlaylists(userId, 0)
 	fmt.Println("%s", playlists)
 	fmt.Println("Number of playlists: ", len(playlists))
-}
-
-func makeHttpRequest(method string, client http.Client, endpoint string) []byte {
-	return nil
 }
 
 func getBody(response *http.Response) []byte {
