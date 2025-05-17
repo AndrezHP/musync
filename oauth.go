@@ -3,41 +3,42 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"golang.org/x/oauth2"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
-	"time"
 )
-
-type ApiToken struct {
-	AccessToken  string
-	TokenType    string
-	RefreshToken string
-	Expiry       time.Time
-}
 
 type OAuthHandler struct {
 	Config       *oauth2.Config
 	Ctx          context.Context
-	TokenChannel chan ApiToken
+	TokenChannel chan *oauth2.Token
 	ApiUrl       string
-	ApiToken     *ApiToken
 }
 
-func NewOAuthHandler(config *oauth2.Config, ctx context.Context, tokenChannel chan ApiToken, apiUrl string) (OAuthHandler, error) {
-	handler := OAuthHandler{
-		config,
-		ctx,
-		tokenChannel,
-		apiUrl,
-		nil,
+func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPath string) *oauth2.Token {
+	_, err := os.Stat(tokenPath)
+	tokenFileExists := !errors.Is(err, os.ErrNotExist)
+	var token *oauth2.Token
+	if tokenFileExists {
+		token, err = readTokenFromFile(tokenPath)
+		check(err)
+	} else {
+		handler := OAuthHandler{
+			config,
+			ctx,
+			make(chan *oauth2.Token),
+			apiUrl,
+		}
+		token = handler.getInitToken()
+		saveTokenToFile(token, tokenPath)
 	}
-	initToken := handler.getInitToken()
-	handler.ApiToken = &initToken
-	return handler, nil
+	return token
 }
 
 func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.Request) {
@@ -46,12 +47,7 @@ func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.
 	token, err := oauth.Config.Exchange(oauth.Ctx, code)
 	check(err)
 
-	oauth.TokenChannel <- ApiToken{
-		token.AccessToken,
-		token.TokenType,
-		token.RefreshToken,
-		token.Expiry,
-	}
+	oauth.TokenChannel <- token
 
 	client := oauth.Config.Client(oauth.Ctx, token)
 	resp, err := client.Get(oauth.ApiUrl)
@@ -65,7 +61,7 @@ func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.
 	fmt.Fprintf(writer, msg)
 }
 
-func (oauth OAuthHandler) getInitToken() ApiToken {
+func (oauth OAuthHandler) getInitToken() *oauth2.Token {
 	go func() {
 		transport := &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -84,13 +80,19 @@ func (oauth OAuthHandler) getInitToken() ApiToken {
 	return token
 }
 
-func (oauth OAuthHandler) getAccessToken() string {
-	if oauth.ApiToken == nil {
-		panic("Token was nil")
-	} else if time.Now().Sub(oauth.ApiToken.Expiry) > 0 {
-		// TODO Implement token refresh
-		return ""
-	} else {
-		return oauth.ApiToken.AccessToken
-	}
+func readTokenFromFile(filePath string) (*oauth2.Token, error) {
+	var token oauth2.Token
+	file, err := os.Open(filePath)
+	defer file.Close()
+	check(err)
+
+	json.NewDecoder(file).Decode(&token)
+	return &token, err
+}
+
+func saveTokenToFile(token *oauth2.Token, filePath string) error {
+	file, err := os.Create(filePath)
+	defer file.Close()
+	json.NewEncoder(file).Encode(*token)
+	return err
 }

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
@@ -16,22 +18,33 @@ func main() {
 	fmt.Printf("%s", playlists)
 }
 
-func makeHttpRequest(method string, api string, endpoint string, token string) []byte {
-	client := &http.Client{}
-	req, err := http.NewRequest(method, api+endpoint, nil)
-	check(err)
+func makeHttpRequest(method string, client http.Client, endpoint string) []byte {
+	return nil
+}
 
-	req.Header.Add("Authorization", "Bearer "+token)
-	res, err := client.Do(req)
-	check(err)
-
-	body, err := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode > 299 {
-		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", res.StatusCode, body)
+func getBody(response *http.Response) []byte {
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode > 299 {
+		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", response.StatusCode, body)
 	}
 	check(err)
 	return body
+}
+
+type ClientParams struct {
+	ClientId     string
+	ClientSecret string
+}
+
+func readClientParams(filePath string) ClientParams {
+	var clientParams ClientParams
+	file, err := os.Open(filePath)
+	defer file.Close()
+	check(err)
+
+	json.NewDecoder(file).Decode(&clientParams)
+	return clientParams
 }
 
 func check(e error) {

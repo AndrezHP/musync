@@ -3,20 +3,21 @@ package main
 import (
 	"context"
 	"golang.org/x/oauth2"
+	"net/http"
 )
 
 type TidalApi struct {
-	OAuthHandler OAuthHandler
-	Url          string
+	Client *http.Client
+	Url    string
 }
 
-func NewTidalApi() (SpotifyApi, error) {
-	clientId, clientSecret := readClientParams()
+func NewTidalApi() (TidalApi, error) {
+	clientParams := readClientParams(".tidalParams.json")
 	scopes := []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
 	apiUrl := "https://api.spotify.com/"
-	conf := &oauth2.Config{
-		ClientID:     clientId,
-		ClientSecret: clientSecret,
+	config := &oauth2.Config{
+		ClientID:     clientParams.ClientId,
+		ClientSecret: clientParams.ClientSecret,
 		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.spotify.com/authorize",
@@ -25,13 +26,12 @@ func NewTidalApi() (SpotifyApi, error) {
 		RedirectURL: "http://localhost:8080/callback",
 	}
 
-	oauthSpotify, err := NewOAuthHandler(conf, context.Background(), make(chan ApiToken), apiUrl)
-	check(err)
-	api := SpotifyApi{
-		oauthSpotify,
+	token := getToken(config, context.Background(), apiUrl, ".tidalToken.json")
+	client := config.Client(context.Background(), token)
+	return TidalApi{
+		client,
 		apiUrl,
-	}
-	return api, nil
+	}, nil
 }
 
 func (api TidalApi) getCurrentUserId() string {

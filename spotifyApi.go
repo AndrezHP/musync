@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2"
-	"os"
+	"net/http"
 )
 
 type Playlist struct {
@@ -28,32 +27,17 @@ type Track struct {
 }
 
 type SpotifyApi struct {
-	OAuthHandler OAuthHandler
-	Url          string
-}
-
-func readClientParams() (string, string) {
-	file, err := os.Open(".spotify")
-	check(err)
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	var clientParams []string
-	for i := 0; i < 2 && scanner.Scan(); i++ {
-		clientParams = append(clientParams, scanner.Text())
-	}
-
-	check(scanner.Err())
-	return clientParams[0], clientParams[1]
+	Client *http.Client
+	Url    string
 }
 
 func NewSpotifyApi() (SpotifyApi, error) {
-	clientId, clientSecret := readClientParams()
+	clientParams := readClientParams(".spotifyParams.json")
 	scopes := []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
 	apiUrl := "https://api.spotify.com/"
-	conf := &oauth2.Config{
-		ClientID:     clientId,
-		ClientSecret: clientSecret,
+	config := &oauth2.Config{
+		ClientID:     clientParams.ClientId,
+		ClientSecret: clientParams.ClientSecret,
 		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://accounts.spotify.com/authorize",
@@ -62,20 +46,21 @@ func NewSpotifyApi() (SpotifyApi, error) {
 		RedirectURL: "http://localhost:8080/callback",
 	}
 
-	oauthSpotify, err := NewOAuthHandler(conf, context.Background(), make(chan ApiToken), apiUrl)
-	check(err)
-	api := SpotifyApi{
-		oauthSpotify,
+	token := getToken(config, context.Background(), apiUrl, ".spotifyToken.json")
+	client := config.Client(context.Background(), token)
+	return SpotifyApi{
+		client,
 		apiUrl,
-	}
-	return api, nil
+	}, nil
 }
 
 func (api SpotifyApi) getCurrentUserId() string {
-	accessToken := api.OAuthHandler.getAccessToken()
-	var response = makeHttpRequest("GET", api.Url, "v1/me", accessToken)
+	res, err := api.Client.Get(api.Url + "v1/me")
+	check(err)
+	responseBody := getBody(res)
+
 	var result map[string]interface{}
-	err := json.Unmarshal(response, &result)
+	err = json.Unmarshal(responseBody, &result)
 	check(err)
 
 	if id, ok := result["id"]; ok {
@@ -86,12 +71,12 @@ func (api SpotifyApi) getCurrentUserId() string {
 }
 
 func (api SpotifyApi) getUserPlaylists(userId string) []Playlist {
-	accessToken := api.OAuthHandler.getAccessToken()
-	var userPlaylists = fmt.Sprintf("v1/users/%s/playlists", userId)
-	var res = makeHttpRequest("GET", api.Url, userPlaylists, accessToken)
+	res, err := api.Client.Get(api.Url + fmt.Sprintf("v1/users/%s/playlists", userId))
+	check(err)
+	responseBody := getBody(res)
 
 	var result map[string]interface{}
-	err := json.Unmarshal(res, &result)
+	err = json.Unmarshal(responseBody, &result)
 	check(err)
 
 	var playlists []Playlist
