@@ -59,8 +59,8 @@ func (api SpotifyApi) getCurrentUserId() string {
 	err = json.Unmarshal(responseBody, &result)
 	check(err)
 
-	if id, ok := result["id"]; ok {
-		return fmt.Sprint(id)
+	if id, ok := result["id"].(string); ok {
+		return id
 	} else {
 		panic("Id of current user not found")
 	}
@@ -87,13 +87,13 @@ func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 	var playlists []Playlist
 	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
 		for i := 0; i < len(lists); i++ {
-			if item, ok := lists[i].(map[string]interface{}); ok {
-				name, _ := item["name"].(string)
-				id, _ := item["id"].(string)
-				tracks, _ := item["tracks"].(map[string]interface{})
-				total, _ := tracks["total"].(float64)
-				playlists = append(playlists, Playlist{id, name, int(total)})
-			}
+			item, _ := lists[i].(map[string]interface{})
+
+			name, _ := item["name"].(string)
+			id, _ := item["id"].(string)
+			tracks, _ := item["tracks"].(map[string]interface{})
+			total, _ := tracks["total"].(float64)
+			playlists = append(playlists, Playlist{id, name, int(total)})
 		}
 	}
 
@@ -122,8 +122,6 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 	params.Set("offset", strconv.Itoa(offset))
 	req.URL.RawQuery = params.Encode()
 
-	fmt.Println("req: ", req)
-
 	res, err := api.Client.Do(req)
 	check(err)
 
@@ -135,21 +133,20 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 	var tracks []Track
 	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
 		for i := 0; i < len(lists); i++ {
-			if item, ok := lists[i].(map[string]interface{}); ok {
-				if track, ok := item["track"].(map[string]interface{}); ok {
-					id, _ := track["id"].(string)
-					name, _ := track["name"].(string)
+			item, _ := lists[i].(map[string]interface{})
+			track, _ := item["track"].(map[string]interface{})
 
-					album, _ := track["album"].(map[string]interface{})
-					albumName, _ := album["name"].(string)
+			id, _ := track["id"].(string)
+			name, _ := track["name"].(string)
 
-					artists, _ := track["artists"].([]interface{})
-					firstArtist, _ := artists[0].(map[string]interface{})
-					artistName, _ := firstArtist["name"].(string)
+			album, _ := track["album"].(map[string]interface{})
+			albumName, _ := album["name"].(string)
 
-					tracks = append(tracks, Track{id, name, albumName, artistName})
-				}
-			}
+			artists, _ := track["artists"].([]interface{})
+			firstArtist, _ := artists[0].(map[string]interface{})
+			artistName, _ := firstArtist["name"].(string)
+
+			tracks = append(tracks, Track{id, name, albumName, artistName})
 		}
 	}
 
@@ -168,6 +165,38 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 	}
 }
 
-func (api SpotifyApi) searchTrack() string {
-	return "Yeah man"
+func (api SpotifyApi) searchTrack(name string, artist string, album string) Track {
+	req, err := http.NewRequest("GET", api.Url+"v1/search", nil)
+	check(err)
+
+	searchString := fmt.Sprintf("track:%s artist:%s album:%s", name, artist, album)
+
+	params := req.URL.Query()
+	params.Set("q", searchString)
+	params.Set("type", "track")
+	req.URL.RawQuery = params.Encode()
+
+	res, err := api.Client.Do(req)
+	check(err)
+
+	responseBody := getBody(res)
+	var result map[string]interface{}
+	err = json.Unmarshal(responseBody, &result)
+	check(err)
+
+	// Parse result
+	tracks, _ := result["tracks"].(map[string]interface{})["items"].([]interface{})
+	firstTrack, _ := tracks[0].(map[string]interface{})
+
+	id, _ := firstTrack["id"].(string)
+	trackName, _ := firstTrack["name"].(string)
+
+	trackAlbum, _ := firstTrack["album"].(map[string]interface{})
+	albumName, _ := trackAlbum["name"].(string)
+
+	artists, _ := firstTrack["artists"].([]interface{})
+	firstArtist, _ := artists[0].(map[string]interface{})
+	artistName, _ := firstArtist["name"].(string)
+
+	return Track{id, trackName, albumName, artistName}
 }

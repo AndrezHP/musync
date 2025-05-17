@@ -22,6 +22,10 @@ func main() {
 	var tracks = spotifyApi.getPlaylistTracks(firstPlaylist.Id, 0)
 	fmt.Println("%s", tracks)
 	fmt.Println("Number of tracks: ", len(tracks))
+
+	var firstTrack = tracks[0]
+	resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
+	fmt.Println("Result track: ", resultTrack)
 }
 
 func getBody(response *http.Response) []byte {
