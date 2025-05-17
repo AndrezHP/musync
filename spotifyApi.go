@@ -9,19 +9,6 @@ import (
 	"strconv"
 )
 
-type Playlist struct {
-	Id     string
-	Name   string
-	Length int
-}
-
-type Track struct {
-	Id     string
-	Name   string
-	Album  string
-	Artist string
-}
-
 type SpotifyApi struct {
 	Client *http.Client
 	Url    string
@@ -42,7 +29,7 @@ func NewSpotifyApi() SpotifyApi {
 		RedirectURL: "http://localhost:8080/callback",
 	}
 
-	token := getToken(config, context.Background(), apiUrl, ".spotifyToken.json")
+	token := getToken(config, context.Background(), apiUrl, ".spotifyToken.json", "8080")
 	client := config.Client(context.Background(), token)
 	return SpotifyApi{
 		client,

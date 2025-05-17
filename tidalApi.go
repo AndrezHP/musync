@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"golang.org/x/oauth2"
 	"net/http"
 )
@@ -11,31 +12,44 @@ type TidalApi struct {
 	Url    string
 }
 
-func NewTidalApi() (TidalApi, error) {
+func NewTidalApi() TidalApi {
 	clientParams := readClientParams(".tidalParams.json")
-	scopes := []string{"user-read-private", "user-read-email", "playlist-read-private", "playlist-read-collaborative"}
-	apiUrl := "https://api.spotify.com/"
+	scopes := []string{"user.read", "collection.read", "collection.write", "playlists.read", "playlists.write"}
+	apiUrl := "https://openapi.tidal.com/"
 	config := &oauth2.Config{
 		ClientID:     clientParams.ClientId,
 		ClientSecret: clientParams.ClientSecret,
 		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://accounts.spotify.com/authorize",
-			TokenURL: "https://accounts.spotify.com/api/token",
+			AuthURL:  "https://login.tidal.com/authorize",
+			TokenURL: "https://auth.tidal.com/v1/oauth2/token",
 		},
-		RedirectURL: "http://localhost:8080/callback",
+		RedirectURL: "http://localhost:8081/callback",
 	}
 
-	token := getToken(config, context.Background(), apiUrl, ".tidalToken.json")
+	token := getToken(config, context.Background(), apiUrl, ".tidalToken.json", "8081")
 	client := config.Client(context.Background(), token)
 	return TidalApi{
 		client,
 		apiUrl,
-	}, nil
+	}
 }
 
 func (api TidalApi) getCurrentUserId() string {
-	return "Yeah man"
+	res, err := api.Client.Get(api.Url + "v2/users/me")
+	check(err)
+	responseBody := getBody(res)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(responseBody, &result)
+	check(err)
+
+	data, _ := result["data"].(map[string]interface{})
+	if id, ok := data["id"].(string); ok {
+		return id
+	} else {
+		panic("Id of current user not found")
+	}
 }
 
 func (api TidalApi) getUserPlaylists(userId string) []Playlist {

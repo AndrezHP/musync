@@ -10,22 +10,26 @@ import (
 )
 
 func main() {
-	spotifyApi := NewSpotifyApi()
+	// spotifyApi := NewSpotifyApi()
 
-	var userId = spotifyApi.getCurrentUserId()
-	var playlists = spotifyApi.getUserPlaylists(userId, 0)
+	// var userId = spotifyApi.getCurrentUserId()
+	// var playlists = spotifyApi.getUserPlaylists(userId, 0)
 
-	fmt.Println("%s", playlists)
-	fmt.Println("Number of playlists: ", len(playlists))
+	// fmt.Println("%s", playlists)
+	// fmt.Println("Number of playlists: ", len(playlists))
 
-	firstPlaylist := playlists[0]
-	var tracks = spotifyApi.getPlaylistTracks(firstPlaylist.Id, 0)
-	fmt.Println("%s", tracks)
-	fmt.Println("Number of tracks: ", len(tracks))
+	// firstPlaylist := playlists[0]
+	// var tracks = spotifyApi.getPlaylistTracks(firstPlaylist.Id, 0)
+	// fmt.Println("%s", tracks)
+	// fmt.Println("Number of tracks: ", len(tracks))
 
-	var firstTrack = tracks[0]
-	resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
-	fmt.Println("Result track: ", resultTrack)
+	// var firstTrack = tracks[0]
+	// resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
+	// fmt.Println("Result track: ", resultTrack)
+
+	tidalApi := NewTidalApi()
+	userId := tidalApi.getCurrentUserId()
+	fmt.Println("id: ", userId)
 }
 
 func getBody(response *http.Response) []byte {
@@ -36,6 +40,19 @@ func getBody(response *http.Response) []byte {
 	}
 	check(err)
 	return body
+}
+
+type Playlist struct {
+	Id     string
+	Name   string
+	Length int
+}
+
+type Track struct {
+	Id     string
+	Name   string
+	Album  string
+	Artist string
 }
 
 type ClientParams struct {
