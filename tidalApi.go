@@ -230,6 +230,31 @@ func (api TidalApi) getTracks(trackIds []string) []Track {
 	return tracks
 }
 
+func (api TidalApi) addTrack(playlistId string, trackId string) {
+	endpoint := api.Url + fmt.Sprintf("v2/playlists/%s/relationships/items", playlistId)
+	payload := map[string]interface{}{
+		"data": []interface{}{
+			map[string]interface{}{
+				"id":   trackId,
+				"type": "tracks",
+			}},
+	}
+
+	jsonData, err := json.Marshal(payload)
+	check(err)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	check(err)
+
+	params := req.URL.Query()
+	params.Set("countryCode", "DK")
+	req.URL.RawQuery = params.Encode()
+
+	res, err := api.Client.Do(req)
+	if res.StatusCode != 201 {
+		panic(fmt.Sprintf("Could not create resource: %s", res))
+	}
 }
 
 func (api TidalApi) createPlaylist(name string) {
