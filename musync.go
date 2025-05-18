@@ -28,12 +28,20 @@ func main() {
 	// fmt.Println("Result track: ", resultTrack)
 
 	tidalApi := NewTidalApi()
-	userId := tidalApi.getCurrentUserId()
-	fmt.Println("id: ", userId)
+	tidalApi.createPlaylist("Test")
 
-	playlists := tidalApi.getUserPlaylists(userId, "")
-	fmt.Println("%s", playlists)
+	// userId := tidalApi.getCurrentUserId()
+	// fmt.Println("id: ", userId)
 
+	// playlists := tidalApi.getUserPlaylists(userId, "")
+	// fmt.Println("%s", playlists)
+
+	// playlistId := "1147ae9d-1ad2-4759-a2cc-9b9c441ae467"
+	// tidalApi.addTrack(playlistId, "179999775")
+
+	// firstPlaylist := playlists[0]
+	// tracks := tidalApi.getPlaylistTracks(firstPlaylist.Id)
+	// fmt.Println("%s", tracks)
 }
 
 func getBody(response *http.Response) []byte {
