@@ -30,6 +30,10 @@ func main() {
 	tidalApi := NewTidalApi()
 	userId := tidalApi.getCurrentUserId()
 	fmt.Println("id: ", userId)
+
+	playlists := tidalApi.getUserPlaylists(userId, "")
+	fmt.Println("%s", playlists)
+
 }
 
 func getBody(response *http.Response) []byte {

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"golang.org/x/oauth2"
+	"math/rand"
 	"net/http"
+	"time"
 )
 
 type TidalApi struct {
@@ -52,8 +56,50 @@ func (api TidalApi) getCurrentUserId() string {
 	}
 }
 
-func (api TidalApi) getUserPlaylists(userId string) []Playlist {
-	return nil
+func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
+	var endpoint string
+	if next == "" {
+		endpoint = api.Url + fmt.Sprintf("v2/playlists?filter[r.owners.id]=%s", userId)
+	} else {
+		endpoint = next
+	}
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	check(err)
+
+	params := req.URL.Query()
+	params.Set("countryCode", "DK")
+	req.URL.RawQuery = params.Encode()
+
+	res, err := api.Client.Do(req)
+	check(err)
+
+	responseBody := getBody(res)
+	var result map[string]interface{}
+	err = json.Unmarshal(responseBody, &result)
+	check(err)
+
+	var playlists []Playlist
+	if lists, ok := result["data"].([]interface{}); ok && len(lists) > 0 {
+		for i := 0; i < len(lists); i++ {
+			item, _ := lists[i].(map[string]interface{})
+			attributes, _ := item["attributes"].(map[string]interface{})
+
+			id, _ := item["id"].(string)
+			name, _ := attributes["name"].(string)
+			length, _ := attributes["numberOfItems"].(float64)
+			playlists = append(playlists, Playlist{id, name, int(length)})
+		}
+	}
+
+	links, _ := result["links"].(map[string]interface{})
+	newNext, ok := links["next"].(string)
+	if ok {
+		return append(playlists, api.getUserPlaylists(userId, newNext)...)
+	} else {
+		return playlists
+	}
+}
 }
 
 func (api TidalApi) getPlaylistTracks(listId string) string {
@@ -62,4 +108,10 @@ func (api TidalApi) getPlaylistTracks(listId string) string {
 
 func (api TidalApi) searchTrack() string {
 	return "Yeah man"
+}
+
+func printJson(body []byte) {
+	var prettyJSON bytes.Buffer
+	json.Indent(&prettyJSON, body, "", "  ")
+	fmt.Println("Json: ", string(prettyJSON.Bytes()))
 }
