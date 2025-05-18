@@ -48,8 +48,6 @@ func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPa
 
 func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.Request) {
 	queryParts, _ := url.ParseQuery(req.URL.RawQuery)
-	fmt.Println("QueryParts: ", queryParts)
-
 	code := queryParts["code"][0]
 	token, err := oauth.Config.Exchange(oauth.Ctx, code, oauth2.SetAuthURLParam("code_verifier", oauth.VerifierCode))
 	check(err)
