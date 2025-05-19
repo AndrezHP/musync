@@ -257,12 +257,79 @@ func (api TidalApi) createPlaylist(name string) string {
 	}
 }
 
-func (api TidalApi) searchTrack() string {
-	return "Yeah man"
+func (api TidalApi) searchTrack(track Track) string {
+	searchString := fmt.Sprintf("%s %s", track.Name, track.Artist)
+	endpoint := api.Url + fmt.Sprintf("v2/searchResults/%s/relationships/tracks", strings.ReplaceAll(searchString, "/", " "))
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	check(err)
+
+	params := req.URL.Query()
+	params.Set("countryCode", "DK")
+	req.URL.RawQuery = params.Encode()
+
+	result, _ := doRequestWithRetry(api.Client, req, false)
+	fmt.Println("Searching for: ", track)
+	data, _ := result["data"].([]interface{})
+	if len(data) > 0 {
+		trackId, _ := data[0].(map[string]interface{})["id"].(string)
+		return trackId
+	} else {
+		return ""
+	}
 }
 
-func printJson(body []byte) {
-	var prettyJSON bytes.Buffer
-	json.Indent(&prettyJSON, body, "", "  ")
-	fmt.Println("Json: ", string(prettyJSON.Bytes()))
+func (api TidalApi) searchAlbum(track Track) string {
+	searchString := fmt.Sprintf("%s %s", track.Artist, track.Album)
+	endpoint := api.Url + fmt.Sprintf("v2/searchResults/%s/relationships/albums", searchString)
+	req, err := http.NewRequest("GET", endpoint, nil)
+	check(err)
+	fmt.Println("Searching for: ", track)
+
+	params := req.URL.Query()
+	params.Set("countryCode", "DK")
+	req.URL.RawQuery = params.Encode()
+
+	result, _ := doRequestWithRetry(api.Client, req, true)
+	data, _ := result["data"].([]interface{})
+	if len(data) > 0 {
+		trackId, _ := data[0].(map[string]interface{})["id"].(string)
+		return trackId
+	} else {
+		return ""
+	}
+}
+
+func (api TidalApi) getAlbum(albumId string, next string) []string {
+	var req *http.Request
+	var err error
+	if next == "" {
+		endpoint := api.Url + fmt.Sprintf("v2/albums/%s/relationships/items", albumId)
+		req, err = http.NewRequest("GET", endpoint, nil)
+		params := req.URL.Query()
+		params.Set("countryCode", "DK")
+		req.URL.RawQuery = params.Encode()
+	} else {
+		req, err = http.NewRequest("GET", api.Url+"v2"+next, nil)
+	}
+	check(err)
+
+	result, _ := doRequestWithRetry(api.Client, req, true)
+
+	var trackIds []string
+	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
+		for i := 0; i < len(data); i++ {
+			id, _ := data[i].(map[string]interface{})["id"].(string)
+			trackIds = append(trackIds, id)
+		}
+	}
+
+	links, _ := result["links"].(map[string]interface{})
+	newNext, ok := links["next"].(string)
+	if ok {
+		fmt.Println("Fetching next tracks")
+		return append(trackIds, api.getAlbum(albumId, newNext)...)
+	} else {
+		return trackIds
+	}
 }

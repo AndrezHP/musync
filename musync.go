@@ -1,48 +1,103 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
-	// spotifyApi := NewSpotifyApi()
+	// migrateSinglePlaylist("1X9Egf7h5Spfrabylh6Yqk", "Piano Jazz")
+	newTest()
+	fmt.Println("Succes")
+}
 
-	// var userId = spotifyApi.getCurrentUserId()
-	// var playlists = spotifyApi.getUserPlaylists(userId, 0)
-
-	// fmt.Println("%s", playlists)
-	// fmt.Println("Number of playlists: ", len(playlists))
-
-	// firstPlaylist := playlists[0]
-	// var tracks = spotifyApi.getPlaylistTracks(firstPlaylist.Id, 0)
-	// fmt.Println("%s", tracks)
-	// fmt.Println("Number of tracks: ", len(tracks))
-
-	// var firstTrack = tracks[0]
-	// resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
-	// fmt.Println("Result track: ", resultTrack)
-
+func newTest() {
 	tidalApi := NewTidalApi()
-	// tidalApi.createPlaylist("Test")
+	track := Track{
+		"",
+		"Beethoven: Allegretto in C Minor, Hess 69",
+		"\"Allegretto\" - Piano Works - Vol. II",
+		"Ludwig Van Beethoven",
+	}
 
-	userId := tidalApi.getCurrentUserId()
-	fmt.Println("id: ", userId)
+	fmt.Println("Searching album for: ", track)
+	albumId := tidalApi.searchAlbum(track)
 
-	playlists := tidalApi.getUserPlaylists(userId, "")
-	fmt.Println("Playlists: %s", playlists)
+	fmt.Println("Get album: ", albumId)
+	tidalApi.getAlbum(albumId, "")
+}
 
-	firstPlaylist := playlists[0]
-	tracks := tidalApi.getPlaylistTracks(firstPlaylist.Id, "")
-	fmt.Println("Tracks on first playlist %s", tracks)
-	fmt.Println("Number of tracks: ", len(tracks))
+func migrateSinglePlaylist(playlistId string, newPlaylistName string) {
+	spotifyApi := NewSpotifyApi()
+	tidalApi := NewTidalApi()
+	var tracks = spotifyApi.getPlaylistTracks(playlistId, 0)
 
-	// playlistId := "1147ae9d-1ad2-4759-a2cc-9b9c441ae467"
-	// tidalApi.addTrack(playlistId, "179999775")
+	var trackIdsToAdd []string
+	var notFound []Track
+	for i, track := range tracks {
+		id := tidalApi.searchTrack(track)
+		fmt.Println("Index: ", i)
+		if id == "" {
+			notFound = append(notFound, track)
+		} else {
+			trackIdsToAdd = append(trackIdsToAdd, id)
+		}
+	}
+
+	newPlaylistId := tidalApi.createPlaylist(newPlaylistName)
+	fmt.Println("New Playlist ID:", newPlaylistId)
+
+	batchSize := 20
+	for i := 0; i < len(trackIdsToAdd); i += batchSize {
+		end := i + batchSize
+		if end > len(trackIdsToAdd) {
+			end = len(trackIdsToAdd)
+		}
+		batch := trackIdsToAdd[i:end]
+		tidalApi.addTracks(newPlaylistId, batch)
+	}
+	fmt.Println("Not found: %s", notFound)
+}
+
+func testStuff() {
+	// spotifyApi := NewSpotifyApi()
+	// // var userId = spotifyApi.getCurrentUserId()
+	// // var playlists = spotifyApi.getUserPlaylists(userId, 0)
+
+	// // fmt.Println("%s", playlists)
+	// // fmt.Println("Number of playlists: ", len(playlists))
+
+	// // firstPlaylist := playlists[0]
+	// var tracks = spotifyApi.getPlaylistTracks("522r13v8YaMF8SCVk7l45i", 0)
+	// // fmt.Println("%s", tracks)
+	// // fmt.Println("Number of tracks: ", len(tracks))
+
+	// // var firstTrack = tracks[0]
+	// // resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
+	// // fmt.Println("Result track: ", resultTrack)
+
+	// tidalApi := NewTidalApi()
+	// playlistId := tidalApi.createPlaylist("Guessed")
+
+	// // userId := tidalApi.getCurrentUserId()
+	// // fmt.Println("id: ", userId)
+
+	// // playlists := tidalApi.getUserPlaylists(userId, "")
+	// // fmt.Println("Playlists: %s", playlists)
+
+	// // firstPlaylist := playlists[0]
+	// // tracks := tidalApi.getPlaylistTracks(firstPlaylist.Id, "")
+	// // fmt.Println("Tracks on first playlist %s", tracks)
+	// // fmt.Println("Number of tracks: ", len(tracks))
+
+	// // playlistId := "1147ae9d-1ad2-4759-a2cc-9b9c441ae467"
+	// // tidalApi.addTrack(playlistId, "179999775")
 }
 
 func getBody(response *http.Response) []byte {
