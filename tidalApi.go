@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2"
-	"math/rand"
 	"net/http"
-	"time"
+	"strings"
 )
 
 type TidalApi struct {
@@ -40,13 +39,9 @@ func NewTidalApi() TidalApi {
 }
 
 func (api TidalApi) getCurrentUserId() string {
-	res, err := api.Client.Get(api.Url + "v2/users/me")
+	req, err := http.NewRequest("GET", api.Url+"v2/users/me", nil)
 	check(err)
-	responseBody := getBody(res)
-
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
+	result, _ := doRequestWithRetry(api.Client, req, false)
 
 	data, _ := result["data"].(map[string]interface{})
 	if id, ok := data["id"].(string); ok {
@@ -68,19 +63,12 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 		req.URL.RawQuery = params.Encode()
 		request = req
 	} else {
-		req, err := http.NewRequest("GET", next, nil)
+		req, err := http.NewRequest("GET", api.Url+"v2"+next, nil)
 		check(err)
 		request = req
 	}
 
-	res, err := api.Client.Do(request)
-	check(err)
-
-	responseBody := getBody(res)
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
-
+	result, _ := doRequestWithRetry(api.Client, request, false)
 	var playlists []Playlist
 	if lists, ok := result["data"].([]interface{}); ok && len(lists) > 0 {
 		for i := 0; i < len(lists); i++ {
@@ -113,7 +101,6 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 
 		params := req.URL.Query()
 		params.Set("countryCode", "DK")
-		params.Set("include", "items")
 		req.URL.RawQuery = params.Encode()
 
 		request = req
@@ -123,15 +110,7 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 		request = req
 	}
 
-	time.Sleep(time.Duration(2000+rand.Intn(1000)) * time.Millisecond)
-	res, err := api.Client.Do(request)
-	check(err)
-
-	responseBody := getBody(res)
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
-
+	result, _ := doRequestWithRetry(api.Client, request, false)
 	var trackIds []string
 	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
 		for i := 0; i < len(data); i++ {
@@ -155,7 +134,6 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 func (api TidalApi) getTracks(trackIds []string) []Track {
 	req, err := http.NewRequest("GET", api.Url+"v2/tracks", nil)
 	check(err)
-
 	params := req.URL.Query()
 	params.Set("countryCode", "DK")
 	params.Set("include", "albums,artists")
@@ -170,20 +148,7 @@ func (api TidalApi) getTracks(trackIds []string) []Track {
 	params.Set("filter[id]", combinedIds)
 	req.URL.RawQuery = params.Encode()
 
-	// Trying to not hit the rate limit
-	time.Sleep(time.Duration(2000+rand.Intn(1000)) * time.Millisecond)
-	res, err := api.Client.Do(req)
-	if res.StatusCode != 200 {
-		fmt.Println("Rate limit hit!")
-		time.Sleep(5 * time.Second)
-		return api.getTracks(trackIds)
-	}
-
-	responseBody := getBody(res)
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
-
+	result, _ := doRequestWithRetry(api.Client, req, false)
 	albumMap := make(map[string]string)
 	artistMap := make(map[string]string)
 	if included, ok := result["included"].([]interface{}); ok && len(included) > 0 {
@@ -230,16 +195,19 @@ func (api TidalApi) getTracks(trackIds []string) []Track {
 	return tracks
 }
 
-func (api TidalApi) addTrack(playlistId string, trackId string) {
+func (api TidalApi) addTracks(playlistId string, trackIds []string) {
 	endpoint := api.Url + fmt.Sprintf("v2/playlists/%s/relationships/items", playlistId)
-	payload := map[string]interface{}{
-		"data": []interface{}{
-			map[string]interface{}{
-				"id":   trackId,
-				"type": "tracks",
-			}},
+	var tracksToAdd []interface{}
+	for _, id := range trackIds {
+		trackToAdd := map[string]interface{}{
+			"id":   id,
+			"type": "tracks",
+		}
+		tracksToAdd = append(tracksToAdd, trackToAdd)
 	}
-
+	payload := map[string]interface{}{
+		"data": tracksToAdd,
+	}
 	jsonData, err := json.Marshal(payload)
 	check(err)
 
@@ -251,13 +219,13 @@ func (api TidalApi) addTrack(playlistId string, trackId string) {
 	params.Set("countryCode", "DK")
 	req.URL.RawQuery = params.Encode()
 
-	res, err := api.Client.Do(req)
-	if res.StatusCode != 201 {
-		panic(fmt.Sprintf("Could not create resource: %s", res))
+	_, response := doRequestWithRetry(api.Client, req, false)
+	if response.StatusCode != 201 {
+		panic(fmt.Sprintf("Could not add tracks resource: %s", response))
 	}
 }
 
-func (api TidalApi) createPlaylist(name string) {
+func (api TidalApi) createPlaylist(name string) string {
 	endpoint := api.Url + "v2/playlists"
 	payload := map[string]interface{}{
 		"data": map[string]interface{}{
@@ -280,9 +248,12 @@ func (api TidalApi) createPlaylist(name string) {
 	params.Set("countryCode", "DK")
 	req.URL.RawQuery = params.Encode()
 
-	res, err := api.Client.Do(req)
-	if res.StatusCode != 201 {
-		panic(fmt.Sprintf("Could not create resource: %s", res))
+	result, _ := doRequestWithRetry(api.Client, req, false)
+	data, _ := result["data"].(map[string]interface{})
+	if id, ok := data["id"].(string); ok {
+		return id
+	} else {
+		panic("Id of new playlist not found")
 	}
 }
 

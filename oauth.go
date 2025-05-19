@@ -31,14 +31,13 @@ func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPa
 		token, err = readTokenFromFile(tokenPath)
 		check(err)
 	} else {
-		verifierCode := oauth2.GenerateVerifier()
 		handler := OAuthHandler{
 			config,
 			ctx,
 			make(chan *oauth2.Token),
 			apiUrl,
 			port,
-			verifierCode,
+			oauth2.GenerateVerifier(),
 		}
 		token = handler.getInitToken()
 		saveTokenToFile(token, tokenPath)

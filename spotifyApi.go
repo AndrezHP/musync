@@ -63,14 +63,7 @@ func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 	params.Set("offset", strconv.Itoa(offset))
 	req.URL.RawQuery = params.Encode()
 
-	res, err := api.Client.Do(req)
-	check(err)
-
-	responseBody := getBody(res)
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
-
+	result, _ := doRequestWithRetry(api.Client, req, false)
 	var playlists []Playlist
 	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
 		for i := 0; i < len(lists); i++ {
@@ -109,14 +102,7 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 	params.Set("offset", strconv.Itoa(offset))
 	req.URL.RawQuery = params.Encode()
 
-	res, err := api.Client.Do(req)
-	check(err)
-
-	responseBody := getBody(res)
-	var result map[string]interface{}
-	err = json.Unmarshal(responseBody, &result)
-	check(err)
-
+	result, _ := doRequestWithRetry(api.Client, req, false)
 	var tracks []Track
 	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
 		for i := 0; i < len(lists); i++ {

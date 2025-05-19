@@ -88,3 +88,32 @@ func check(e error) {
 		panic(e)
 	}
 }
+
+func doRequestWithRetry(client *http.Client, request *http.Request, printBody bool) (map[string]interface{}, *http.Response) {
+	time.Sleep(4000 * time.Millisecond)
+	response, err := client.Do(request)
+	check(err)
+	if response.StatusCode == 429 {
+		fmt.Println("Rate limit hit!")
+		time.Sleep(5 * time.Second)
+		return doRequestWithRetry(client, request, printBody)
+	}
+
+	reponseBody := getBody(response)
+	var result map[string]interface{}
+	err = json.Unmarshal(reponseBody, &result)
+	if err != nil {
+		fmt.Println("Error: %s, response: ", err, response)
+	}
+
+	if printBody {
+		printJson(reponseBody)
+	}
+	return result, response
+}
+
+func printJson(body []byte) {
+	var prettyJSON bytes.Buffer
+	json.Indent(&prettyJSON, body, "", "  ")
+	fmt.Println("Json: ", string(prettyJSON.Bytes()))
+}
