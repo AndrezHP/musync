@@ -36,92 +36,106 @@ type ClientParams struct {
 }
 
 func main() {
-	// migrateSinglePlaylist("1X9Egf7h5Spfrabylh6Yqk", "Piano Jazz")
-	newTest()
 	fmt.Println("Succes")
 }
 
-func newTest() {
+func test2() {
 	tidalApi := NewTidalApi()
 	track := Track{
-		"",
-		"Beethoven: Allegretto in C Minor, Hess 69",
-		"\"Allegretto\" - Piano Works - Vol. II",
-		"Ludwig Van Beethoven",
-	}
-
-	fmt.Println("Searching album for: ", track)
-	albumId := tidalApi.searchAlbum(track)
-
-	fmt.Println("Get album: ", albumId)
-	tidalApi.getAlbum(albumId, "")
+		"31EJcKUZGaDCm684ByEx0G",
+		"She Looks to Me",
+		"Red Hot Chili Pepper",
+		"Stadium Arcadium",
+		"5lqPdkAz8XUdjYIiTnZTZz",
+		5,
+		2}
+	tidalApi.searchTrack(track)
+	tidalApi.searchAlbum(track)
+	trackLookup(tidalApi, track)
 }
 
-func migrateSinglePlaylist(playlistId string, newPlaylistName string) {
+func test() {
+	albumId := "68789392"
+	endpoint := "/albums/" + albumId
+	args := []Pair{{"countryCode", "DK"}, {"include", "artists,items"}}
+	testEndpoint("https://openapi.tidal.com/v2"+endpoint, args)
+}
+
+func entry() {
+	// Tidal:
+	// (Check if logged in/token exists and is valid)
+	// - "You are not logged into Tidal -> log in"
+
+	// Spotify:
+	// (Check if logged in/token exists and is valid)
+	// - "You are not logged into Spotify -> log in"
+}
+
+func updateFromSpotify() {
+	// Get all playlists -> database (if !exist)
+	// For all playlists in database:
+	// - Get all songs
+	// - - Add to track database if !exist
+	// - - Add relation
+}
+
+func updateFromTidal() {}
+
+func trackLookup(tidalApi TidalApi, searchTrack Track) string {
+	albumId := tidalApi.searchAlbum(searchTrack)
+	if albumId == "" {
+		return ""
+	}
+	fmt.Println("Get album: ", albumId)
+	trackIndexMap := make(map[string]DiscIndex)
+	albumTracks := tidalApi.getAlbum(albumId, searchTrack.Album, "", trackIndexMap)
+	tracks := tidalApi.getTracks(albumTracks, trackIndexMap)
+
+	for _, track := range tracks {
+		if track.Name == searchTrack.Name ||
+			(track.TrackNumber == searchTrack.TrackNumber && track.DiscNumber == searchTrack.DiscNumber) {
+			fmt.Println("Succes! Track: ", track)
+			return track.Id
+		}
+	}
+	return ""
+}
+
+func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 	spotifyApi := NewSpotifyApi()
 	tidalApi := NewTidalApi()
 	var tracks = spotifyApi.getPlaylistTracks(playlistId, 0)
 
-	var trackIdsToAdd []string
+	var trackIds []string
 	var notFound []Track
 	for i, track := range tracks {
-		id := tidalApi.searchTrack(track)
+		var id = trackLookup(tidalApi, track)
+		if id == "" {
+			id = tidalApi.searchTrack(track)
+		}
 		fmt.Println("Index: ", i)
 		if id == "" {
 			notFound = append(notFound, track)
 		} else {
-			trackIdsToAdd = append(trackIdsToAdd, id)
+			trackIds = append(trackIds, id)
 		}
 	}
 
 	newPlaylistId := tidalApi.createPlaylist(newPlaylistName)
 	fmt.Println("New Playlist ID:", newPlaylistId)
 
+	sleep = 5000
 	batchSize := 20
-	for i := 0; i < len(trackIdsToAdd); i += batchSize {
-		end := i + batchSize
-		if end > len(trackIdsToAdd) {
-			end = len(trackIdsToAdd)
-		}
-		batch := trackIdsToAdd[i:end]
+	for i := 0; i < len(trackIds); i += batchSize {
+		batch := trackIds[i:min(i+batchSize, len(trackIds))]
 		tidalApi.addTracks(newPlaylistId, batch)
 	}
-	fmt.Println("Not found: %s", notFound)
+	fmt.Println("Not found: ", notFound)
 }
 
-func testStuff() {
-	// spotifyApi := NewSpotifyApi()
-	// // var userId = spotifyApi.getCurrentUserId()
-	// // var playlists = spotifyApi.getUserPlaylists(userId, 0)
-
-	// // fmt.Println("%s", playlists)
-	// // fmt.Println("Number of playlists: ", len(playlists))
-
-	// // firstPlaylist := playlists[0]
-	// var tracks = spotifyApi.getPlaylistTracks("522r13v8YaMF8SCVk7l45i", 0)
-	// // fmt.Println("%s", tracks)
-	// // fmt.Println("Number of tracks: ", len(tracks))
-
-	// // var firstTrack = tracks[0]
-	// // resultTrack := spotifyApi.searchTrack(firstTrack.Name, firstTrack.Artist, firstTrack.Album)
-	// // fmt.Println("Result track: ", resultTrack)
-
-	// tidalApi := NewTidalApi()
-	// playlistId := tidalApi.createPlaylist("Guessed")
-
-	// // userId := tidalApi.getCurrentUserId()
-	// // fmt.Println("id: ", userId)
-
-	// // playlists := tidalApi.getUserPlaylists(userId, "")
-	// // fmt.Println("Playlists: %s", playlists)
-
-	// // firstPlaylist := playlists[0]
-	// // tracks := tidalApi.getPlaylistTracks(firstPlaylist.Id, "")
-	// // fmt.Println("Tracks on first playlist %s", tracks)
-	// // fmt.Println("Number of tracks: ", len(tracks))
-
-	// // playlistId := "1147ae9d-1ad2-4759-a2cc-9b9c441ae467"
-	// // tidalApi.addTrack(playlistId, "179999775")
+type Pair struct {
+	Key   string
+	Value string
 }
 
 func getBody(response *http.Response) []byte {
