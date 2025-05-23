@@ -6,10 +6,34 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"time"
 )
+
+var sleep float64 = 1500
+
+type Playlist struct {
+	Id     string
+	Name   string
+	Length int
+}
+
+type Track struct {
+	Id          string
+	Name        string
+	Artist      string
+	Album       string
+	AlbumId     string
+	TrackNumber int
+	DiscNumber  int
+}
+
+type ClientParams struct {
+	ClientId     string
+	ClientSecret string
+}
 
 func main() {
 	// migrateSinglePlaylist("1X9Egf7h5Spfrabylh6Yqk", "Piano Jazz")
@@ -110,30 +134,11 @@ func getBody(response *http.Response) []byte {
 	return body
 }
 
-type Playlist struct {
-	Id     string
-	Name   string
-	Length int
-}
-
-type Track struct {
-	Id     string
-	Name   string
-	Album  string
-	Artist string
-}
-
-type ClientParams struct {
-	ClientId     string
-	ClientSecret string
-}
-
 func readClientParams(filePath string) ClientParams {
 	var clientParams ClientParams
 	file, err := os.Open(filePath)
 	defer file.Close()
 	check(err)
-
 	json.NewDecoder(file).Decode(&clientParams)
 	return clientParams
 }
@@ -144,21 +149,22 @@ func check(e error) {
 	}
 }
 
-func doRequestWithRetry(client *http.Client, request *http.Request, printBody bool) (map[string]interface{}, *http.Response) {
-	time.Sleep(4000 * time.Millisecond)
+func doRequestWithRetry(client *http.Client, request *http.Request, printBody bool) (map[string]any, *http.Response) {
+	time.Sleep(time.Duration(sleep) * time.Millisecond)
 	response, err := client.Do(request)
 	check(err)
 	if response.StatusCode == 429 {
-		fmt.Println("Rate limit hit!")
+		sleep = math.Min(sleep+100, 4000)
+		fmt.Println("Rate limit hit! Increasing sleep time to: ", sleep)
 		time.Sleep(5 * time.Second)
 		return doRequestWithRetry(client, request, printBody)
 	}
 
 	reponseBody := getBody(response)
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(reponseBody, &result)
 	if err != nil {
-		fmt.Println("Error: %s, response: ", err, response)
+		fmt.Println("Error: ", err, "Response", response)
 	}
 
 	if printBody {
