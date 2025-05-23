@@ -42,7 +42,7 @@ func (api SpotifyApi) getCurrentUserId() string {
 	check(err)
 	responseBody := getBody(res)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(responseBody, &result)
 	check(err)
 
@@ -65,13 +65,13 @@ func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	var playlists []Playlist
-	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
-		for i := 0; i < len(lists); i++ {
-			item, _ := lists[i].(map[string]interface{})
+	if lists, ok := result["items"].([]any); ok && len(lists) > 0 {
+		for i := range len(lists) {
+			item, _ := lists[i].(map[string]any)
 
 			name, _ := item["name"].(string)
 			id, _ := item["id"].(string)
-			tracks, _ := item["tracks"].(map[string]interface{})
+			tracks, _ := item["tracks"].(map[string]any)
 			total, _ := tracks["total"].(float64)
 			playlists = append(playlists, Playlist{id, name, int(total)})
 		}
@@ -104,22 +104,11 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	var tracks []Track
-	if lists, ok := result["items"].([]interface{}); ok && len(lists) > 0 {
-		for i := 0; i < len(lists); i++ {
-			item, _ := lists[i].(map[string]interface{})
-			track, _ := item["track"].(map[string]interface{})
-
-			id, _ := track["id"].(string)
-			name, _ := track["name"].(string)
-
-			album, _ := track["album"].(map[string]interface{})
-			albumName, _ := album["name"].(string)
-
-			artists, _ := track["artists"].([]interface{})
-			firstArtist, _ := artists[0].(map[string]interface{})
-			artistName, _ := firstArtist["name"].(string)
-
-			tracks = append(tracks, Track{id, name, albumName, artistName})
+	if lists, ok := result["items"].([]any); ok && len(lists) > 0 {
+		for i := range len(lists) {
+			item, _ := lists[i].(map[string]any)
+			track, _ := item["track"].(map[string]any)
+			tracks = append(tracks, trackFromMap(track))
 		}
 	}
 
@@ -138,6 +127,23 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 	}
 }
 
+func trackFromMap(trackMap map[string]any) Track {
+	id, _ := trackMap["id"].(string)
+	trackName, _ := trackMap["name"].(string)
+	trackNumber, _ := trackMap["track_number"].(float64)
+	discNumber, _ := trackMap["disc_number"].(float64)
+
+	trackAlbum, _ := trackMap["album"].(map[string]any)
+	albumName, _ := trackAlbum["name"].(string)
+	albumId, _ := trackAlbum["id"].(string)
+
+	artists, _ := trackMap["artists"].([]any)
+	firstArtist, _ := artists[0].(map[string]any)
+	artistName, _ := firstArtist["name"].(string)
+
+	return Track{id, trackName, artistName, albumName, albumId, int(trackNumber), int(discNumber)}
+}
+
 func (api SpotifyApi) searchTrack(name string, artist string, album string) Track {
 	req, err := http.NewRequest("GET", api.Url+"v1/search", nil)
 	check(err)
@@ -153,23 +159,12 @@ func (api SpotifyApi) searchTrack(name string, artist string, album string) Trac
 	check(err)
 
 	responseBody := getBody(res)
-	var result map[string]interface{}
+	var result map[string]any
 	err = json.Unmarshal(responseBody, &result)
 	check(err)
 
 	// Parse result
-	tracks, _ := result["tracks"].(map[string]interface{})["items"].([]interface{})
-	firstTrack, _ := tracks[0].(map[string]interface{})
-
-	id, _ := firstTrack["id"].(string)
-	trackName, _ := firstTrack["name"].(string)
-
-	trackAlbum, _ := firstTrack["album"].(map[string]interface{})
-	albumName, _ := trackAlbum["name"].(string)
-
-	artists, _ := firstTrack["artists"].([]interface{})
-	firstArtist, _ := artists[0].(map[string]interface{})
-	artistName, _ := firstArtist["name"].(string)
-
-	return Track{id, trackName, albumName, artistName}
+	tracks, _ := result["tracks"].(map[string]any)["items"].([]any)
+	firstTrack, _ := tracks[0].(map[string]any)
+	return trackFromMap(firstTrack)
 }
