@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -151,7 +150,7 @@ func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 	var trackIds []string
 	var notFound []Track
 	for i, track := range tracks {
-		log.Println("Lookup for track: ", track, ", index: ", i)
+		log.Println("Index: ", i, " Lookup for track: ", track)
 		var id = trackLookup(tidalApi, track)
 		if id == "" {
 			notFound = append(notFound, track)
