@@ -19,7 +19,7 @@ type TidalApi struct {
 func NewTidalApi() TidalApi {
 	clientParams := readClientParams(".tidalParams.json")
 	scopes := []string{"user.read", "collection.read", "collection.write", "playlists.read", "playlists.write"}
-	apiUrl := "https://openapi.tidal.com/"
+	apiUrl := "https://openapi.tidal.com/v2"
 	config := &oauth2.Config{
 		ClientID:     clientParams.ClientId,
 		ClientSecret: clientParams.ClientSecret,
@@ -31,7 +31,7 @@ func NewTidalApi() TidalApi {
 		RedirectURL: "http://localhost:8081/callback",
 	}
 
-	token := getToken(config, context.Background(), apiUrl, ".tidalToken.json", "8081")
+	token := getToken(config, context.Background(), apiUrl, ".tidalToken.json", "8081", true)
 	client := config.Client(context.Background(), token)
 	return TidalApi{
 		client,
@@ -40,7 +40,7 @@ func NewTidalApi() TidalApi {
 }
 
 func (api TidalApi) getCurrentUserId() string {
-	req, err := http.NewRequest("GET", api.Url+"v2/users/me", nil)
+	req, err := http.NewRequest("GET", api.Url+"/users/me", nil)
 	check(err)
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	data, _ := result["data"].(map[string]any)
@@ -54,7 +54,7 @@ func (api TidalApi) getCurrentUserId() string {
 func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 	var request *http.Request
 	if next == "" {
-		endpoint := api.Url + fmt.Sprintf("v2/playlists?filter[r.owners.id]=%s", userId)
+		endpoint := api.Url + fmt.Sprintf("/playlists?filter[r.owners.id]=%s", userId)
 		req, err := http.NewRequest("GET", endpoint, nil)
 		check(err)
 
@@ -63,7 +63,7 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 		req.URL.RawQuery = params.Encode()
 		request = req
 	} else {
-		req, err := http.NewRequest("GET", api.Url+"v2"+next, nil)
+		req, err := http.NewRequest("GET", api.Url+next, nil)
 		check(err)
 		request = req
 	}
@@ -95,7 +95,7 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 	var request *http.Request
 	if next == "" {
-		endpoint := api.Url + fmt.Sprintf("v2/playlists/%s/relationships/items", playlistId)
+		endpoint := api.Url + fmt.Sprintf("/playlists/%s/relationships/items", playlistId)
 		req, err := http.NewRequest("GET", endpoint, nil)
 		check(err)
 
@@ -105,7 +105,7 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 
 		request = req
 	} else {
-		req, err := http.NewRequest("GET", api.Url+"v2"+next, nil)
+		req, err := http.NewRequest("GET", api.Url+next, nil)
 		check(err)
 		request = req
 	}
@@ -142,7 +142,7 @@ func (api TidalApi) getTracks(trackIds []string, trackIndexMap map[string]DiscIn
 }
 
 func (api TidalApi) getTracksBatch(trackIds []string, trackIndexMap map[string]DiscIndex) []Track {
-	req, err := http.NewRequest("GET", api.Url+"v2/tracks", nil)
+	req, err := http.NewRequest("GET", api.Url+"/tracks", nil)
 	check(err)
 	params := req.URL.Query()
 	params.Set("countryCode", "DK")
@@ -216,7 +216,7 @@ func (api TidalApi) getTracksBatch(trackIds []string, trackIndexMap map[string]D
 }
 
 func (api TidalApi) addTracks(playlistId string, trackIds []string) {
-	endpoint := api.Url + fmt.Sprintf("v2/playlists/%s/relationships/items", playlistId)
+	endpoint := api.Url + fmt.Sprintf("/playlists/%s/relationships/items", playlistId)
 	var tracksToAdd []any
 	for _, id := range trackIds {
 		trackToAdd := map[string]any{
@@ -246,7 +246,7 @@ func (api TidalApi) addTracks(playlistId string, trackIds []string) {
 }
 
 func (api TidalApi) createPlaylist(name string) string {
-	endpoint := api.Url + "v2/playlists"
+	endpoint := api.Url + "/playlists"
 	payload := map[string]any{
 		"data": map[string]any{
 			"type": "playlists",
@@ -284,7 +284,7 @@ func cleanSearchString(input string) string {
 
 func (api TidalApi) searchTrack(track Track) string {
 	searchString := cleanSearchString(track.Name + " " + track.Artist)
-	endpoint := api.Url + fmt.Sprintf("v2/searchResults/%s/relationships/tracks", searchString)
+	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/topHits", searchString)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	check(err)
@@ -305,7 +305,7 @@ func (api TidalApi) searchTrack(track Track) string {
 
 func (api TidalApi) searchAlbum(track Track) string {
 	searchString := cleanSearchString(track.Album + " " + track.Artist)
-	endpoint := api.Url + fmt.Sprintf("v2/searchResults/%s/relationships/albums", searchString)
+	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/albums", searchString)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	check(err)
 
@@ -337,14 +337,14 @@ func (api TidalApi) getAlbum(albumId string, albumName string, next string, trac
 	var req *http.Request
 	var err error
 	if next == "" {
-		endpoint := api.Url + fmt.Sprintf("v2/albums/%s", albumId)
+		endpoint := api.Url + fmt.Sprintf("/albums/%s", albumId)
 		req, err = http.NewRequest("GET", endpoint, nil)
 		params := req.URL.Query()
 		params.Set("countryCode", "DK")
-		params.Set("include", "items")
+		params.Set("include", "items,albums,artists")
 		req.URL.RawQuery = params.Encode()
 	} else {
-		req, err = http.NewRequest("GET", api.Url+"v2"+next, nil)
+		req, err = http.NewRequest("GET", api.Url+next+"&include=albums", nil)
 	}
 	check(err)
 

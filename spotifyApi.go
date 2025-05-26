@@ -29,7 +29,7 @@ func NewSpotifyApi() SpotifyApi {
 		RedirectURL: "http://localhost:8080/callback",
 	}
 
-	token := getToken(config, context.Background(), apiUrl, ".spotifyToken.json", "8080")
+	token := getToken(config, context.Background(), apiUrl, ".spotifyToken.json", "8080", false)
 	client := config.Client(context.Background(), token)
 	return SpotifyApi{
 		client,
@@ -148,7 +148,7 @@ func (api SpotifyApi) searchTrack(name string, artist string, album string) Trac
 	req, err := http.NewRequest("GET", api.Url+"v1/search", nil)
 	check(err)
 
-	searchString := fmt.Sprintf("track:%s artist:%s album:%s", name, artist, album)
+	searchString := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", name, artist, album)
 
 	params := req.URL.Query()
 	params.Set("q", searchString)
