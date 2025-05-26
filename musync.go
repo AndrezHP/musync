@@ -35,23 +35,27 @@ type ClientParams struct {
 	ClientSecret string
 }
 
-func main() {
-	fmt.Println("Succes")
+func startLogging() {
+	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	multiWriter := io.MultiWriter(os.Stdout, file)
+	log.SetOutput(multiWriter)
 }
 
-func test2() {
-	tidalApi := NewTidalApi()
-	track := Track{
-		"31EJcKUZGaDCm684ByEx0G",
-		"She Looks to Me",
-		"Red Hot Chili Pepper",
-		"Stadium Arcadium",
-		"5lqPdkAz8XUdjYIiTnZTZz",
-		5,
-		2}
-	tidalApi.searchTrack(track)
-	tidalApi.searchAlbum(track)
-	trackLookup(tidalApi, track)
+func main() {
+	startLogging()
+	start := time.Now()
+
+	migrateSinglePlaylistToTidal("1Nn4jKAU6ipUwrCDdPGmei", "Test")
+	// test()
+
+	end := time.Now()
+	elapsed := end.Sub(start)
+	log.Println("Elapsed: ", time.Duration.Milliseconds(elapsed))
 }
 
 func test() {
