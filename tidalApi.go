@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -55,12 +56,8 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 	var request *http.Request
 	if next == "" {
 		endpoint := api.Url + fmt.Sprintf("/playlists?filter[r.owners.id]=%s", userId)
-		req, err := http.NewRequest("GET", endpoint, nil)
+		req, err := http.NewRequest("GET", endpoint+"countryCode=DK", nil)
 		check(err)
-
-		params := req.URL.Query()
-		params.Set("countryCode", "DK")
-		req.URL.RawQuery = params.Encode()
 		request = req
 	} else {
 		req, err := http.NewRequest("GET", api.Url+next, nil)
@@ -85,7 +82,7 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 	links, _ := result["links"].(map[string]any)
 	newNext, ok := links["next"].(string)
 	if ok {
-		fmt.Println("Fetching next playlists")
+		log.Println("Fetching next playlists from: ", newNext)
 		return append(playlists, api.getUserPlaylists(userId, newNext)...)
 	} else {
 		return playlists
@@ -96,13 +93,8 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 	var request *http.Request
 	if next == "" {
 		endpoint := api.Url + fmt.Sprintf("/playlists/%s/relationships/items", playlistId)
-		req, err := http.NewRequest("GET", endpoint, nil)
+		req, err := http.NewRequest("GET", endpoint+"countryCode=DK", nil)
 		check(err)
-
-		params := req.URL.Query()
-		params.Set("countryCode", "DK")
-		req.URL.RawQuery = params.Encode()
-
 		request = req
 	} else {
 		req, err := http.NewRequest("GET", api.Url+next, nil)
@@ -124,7 +116,7 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 	links, _ := result["links"].(map[string]any)
 	newNext, ok := links["next"].(string)
 	if ok {
-		fmt.Println("Fetching next tracks")
+		log.Println("Fetching next tracks from: ", newNext)
 		return append(tracks, api.getPlaylistTracks(playlistId, newNext)...)
 	} else {
 		return tracks
@@ -231,17 +223,13 @@ func (api TidalApi) addTracks(playlistId string, trackIds []string) {
 	jsonData, err := json.Marshal(payload)
 	check(err)
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", endpoint+"?countryCode=DK", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	check(err)
 
-	params := req.URL.Query()
-	params.Set("countryCode", "DK")
-	req.URL.RawQuery = params.Encode()
-
 	_, response := doRequestWithRetry(api.Client, req, false)
 	if response.StatusCode != 201 {
-		panic(fmt.Sprint("Could not add tracks resource: ", response))
+		log.Println("Could not add tracks: ", response)
 	}
 }
 
@@ -260,13 +248,9 @@ func (api TidalApi) createPlaylist(name string) string {
 	jsonData, err := json.Marshal(payload)
 	check(err)
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", endpoint+"?countryCode=DK", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	check(err)
-
-	params := req.URL.Query()
-	params.Set("countryCode", "DK")
-	req.URL.RawQuery = params.Encode()
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	data, _ := result["data"].(map[string]any)
@@ -277,8 +261,9 @@ func (api TidalApi) createPlaylist(name string) string {
 	}
 }
 
+// TODO Maybe use this for comparison also (with the addition of removing anything remaster related and -)
 func cleanSearchString(input string) string {
-	regex := regexp.MustCompile(`[@#$%^&*\[\]:;,.?/~\\|]`)
+	regex := regexp.MustCompile(`\[.+\]|[@#$%^&*\[\]:;,?/~\\|]|\b[Tt]rio\b|"`)
 	return regex.ReplaceAllString(input, " ")
 }
 
@@ -286,15 +271,17 @@ func (api TidalApi) searchTrack(track Track) string {
 	searchString := cleanSearchString(track.Name + " " + track.Artist)
 	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/topHits", searchString)
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
 	check(err)
-
-	params := req.URL.Query()
-	params.Set("countryCode", "DK")
-	req.URL.RawQuery = params.Encode()
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	data, _ := result["data"].([]any)
+	for i := range len(data) {
+		item, _ := data[i].(map[string]any)
+		if item["type"].(string) == "tracks" {
+			return item["id"].(string)
+		}
+	}
 	if len(data) > 0 {
 		trackId, _ := data[0].(map[string]any)["id"].(string)
 		return trackId
@@ -306,14 +293,10 @@ func (api TidalApi) searchTrack(track Track) string {
 func (api TidalApi) searchAlbum(track Track) string {
 	searchString := cleanSearchString(track.Album + " " + track.Artist)
 	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/albums", searchString)
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
 	check(err)
 
-	fmt.Println("Searching album for: ", track)
-	params := req.URL.Query()
-	params.Set("countryCode", "DK")
-	req.URL.RawQuery = params.Encode()
-
+	log.Println("Searching album for: ", track)
 	result, _ := doRequestWithRetry(api.Client, req, false)
 	data, _ := result["data"].([]any)
 	if len(data) > 0 {
@@ -329,16 +312,15 @@ type DiscIndex struct {
 	DiscNumber  int
 }
 
-func (api TidalApi) getAlbum(albumId string, albumName string, next string, trackIndexMap map[string]DiscIndex) []string {
-	if albumName == "" {
-		return nil
-	}
+func stringMatch(str1 string, str2 string) bool {
+	return strings.ToLower(str1) == strings.ToLower(str2)
+}
 
+func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, trackIndexMap map[string]DiscIndex) []string {
 	var req *http.Request
 	var err error
 	if next == "" {
-		endpoint := api.Url + fmt.Sprintf("/albums/%s", albumId)
-		req, err = http.NewRequest("GET", endpoint, nil)
+		req, err = http.NewRequest("GET", api.Url+"/albums/"+albumId, nil)
 		params := req.URL.Query()
 		params.Set("countryCode", "DK")
 		params.Set("include", "items,albums,artists")
@@ -346,14 +328,23 @@ func (api TidalApi) getAlbum(albumId string, albumName string, next string, trac
 	} else {
 		req, err = http.NewRequest("GET", api.Url+next+"&include=albums", nil)
 	}
-	check(err)
 
+	check(err)
 	result, _ := doRequestWithRetry(api.Client, req, false)
-	// Check that album name matches // TODO Maybe check this or artist
+
 	if next == "" {
-		attributes := result["data"].(map[string]any)["attributes"]
-		title := attributes.(map[string]any)["title"].(string)
-		if strings.ToLower(title) != strings.ToLower(albumName) {
+		albumName, _ := result["data"].(map[string]any)["attributes"].(map[string]any)["title"].(string)
+		var albumArtist = ""
+		included, _ := result["included"].([]any)
+		for i := range len(included) {
+			inc, _ := included[i].(map[string]any)
+			if inc["type"].(string) == "artists" {
+				albumArtist = inc["attributes"].(map[string]any)["name"].(string)
+			}
+		}
+
+		if !stringMatch(albumArtist, searchTrack.Artist) || !stringMatch(albumName, searchTrack.Album) {
+			log.Println("Album or artist did not match!", albumArtist, albumName)
 			return nil
 		}
 	}
@@ -370,22 +361,20 @@ func (api TidalApi) getAlbum(albumId string, albumName string, next string, trac
 	}
 
 	var trackIds []string
-	if len(data) > 0 {
-		for i := range len(data) {
-			item, _ := data[i].(map[string]any)
-			id, _ := item["id"].(string)
+	for i := range len(data) {
+		item, _ := data[i].(map[string]any)
+		id, _ := item["id"].(string)
 
-			trackNumber, _ := item["meta"].(map[string]any)["trackNumber"].(float64)
-			discNumber, _ := item["meta"].(map[string]any)["volumeNumber"].(float64)
-			trackIndexMap[id] = DiscIndex{int(trackNumber), int(discNumber)}
-			trackIds = append(trackIds, id)
-		}
+		trackNumber, _ := item["meta"].(map[string]any)["trackNumber"].(float64)
+		discNumber, _ := item["meta"].(map[string]any)["volumeNumber"].(float64)
+		trackIndexMap[id] = DiscIndex{int(trackNumber), int(discNumber)}
+		trackIds = append(trackIds, id)
 	}
 
 	newNext, ok := links["next"].(string)
 	if ok {
 		fmt.Println("Fetching next tracks on album")
-		nextTrackIds := api.getAlbum(albumId, albumName, newNext, trackIndexMap)
+		nextTrackIds := api.getAlbum(albumId, searchTrack, newNext, trackIndexMap)
 		return append(trackIds, nextTrackIds...)
 	} else {
 		return trackIds

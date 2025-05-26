@@ -1,14 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"math"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -30,22 +25,6 @@ type Track struct {
 	DiscNumber  int
 }
 
-type ClientParams struct {
-	ClientId     string
-	ClientSecret string
-}
-
-func startLogging() {
-	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	multiWriter := io.MultiWriter(os.Stdout, file)
-	log.SetOutput(multiWriter)
-}
-
 func main() {
 	startLogging()
 	start := time.Now()
@@ -59,46 +38,104 @@ func main() {
 }
 
 func test() {
-	albumId := "68789392"
-	endpoint := "/albums/" + albumId
-	args := []Pair{{"countryCode", "DK"}, {"include", "artists,items"}}
-	testEndpoint("https://openapi.tidal.com/v2"+endpoint, args)
+	// api := NewTidalApi()
+	// searchString := "Blanket"
+	// var endpoint = "/searchResults/" + searchString + "/relationships/artists"
+
+	// endpoint = "/artists/3947529/relationships/albums?countryCode=DK"
+	// var args = []Pair{{"countryCode", "DK"}, {"include", "tracks,albums"}}
+	// testEndpoint("https://openapi.tidal.com/"+endpoint, args)
+
+	// searchTrack := Track{
+	// 	"",
+	// 	"Caribe",
+	// 	"Michel Camilo",
+	// 	"Michel Camilo",
+	// 	"",
+	// 	9,
+	// 	1,
+	// }
 }
 
-func entry() {
-	// Tidal:
-	// (Check if logged in/token exists and is valid)
-	// - "You are not logged into Tidal -> log in"
+func artistAlbumLookup(api TidalApi, searchTrack Track) string {
+	searchString := cleanSearchString(searchTrack.Artist)
+	endpoint := api.Url + "/searchResults/" + searchString + "/relationships/topHits"
+	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
+	check(err)
 
-	// Spotify:
-	// (Check if logged in/token exists and is valid)
-	// - "You are not logged into Spotify -> log in"
+	var result, _ = doRequestWithRetry(api.Client, req, false)
+	data, _ := result["data"].([]any)
+	for i := range len(data) {
+		item, _ := data[i].(map[string]any)
+		if item["type"].(string) == "artists" {
+			return findAlbumForArtist(api, searchTrack, item["id"].(string))
+		}
+	}
+	return ""
 }
 
-func updateFromSpotify() {
-	// Get all playlists -> database (if !exist)
-	// For all playlists in database:
-	// - Get all songs
-	// - - Add to track database if !exist
-	// - - Add relation
-}
+func findAlbumForArtist(api TidalApi, searchTrack Track, artistId string) string {
+	endpoint := api.Url + "/artists/" + artistId + "/relationships/albums"
+	var req, err = http.NewRequest("GET", endpoint+"?countryCode=DK&include=albums", nil)
+	check(err)
 
-func updateFromTidal() {}
+	var searchCount = 0
+	for searchCount < 3 {
+		searchCount++
+		result, _ := doRequestWithRetry(api.Client, req, false)
+		included, _ := result["included"].([]any)
+		for i := range len(included) {
+			item, _ := included[i].(map[string]any)
+			title, _ := item["attributes"].(map[string]any)["title"].(string)
+			if stringMatch(title, searchTrack.Album) {
+				log.Println("Album match!")
+				return item["id"].(string)
+			}
+		}
+
+		links, _ := result["links"].(map[string]any)
+		newNext, ok := links["next"].(string)
+		if ok && searchCount < 3 {
+			log.Println("Next albums from: ", newNext)
+			req, err = http.NewRequest("GET", api.Url+newNext, nil)
+		} else {
+			return ""
+		}
+	}
+	return ""
+}
 
 func trackLookup(tidalApi TidalApi, searchTrack Track) string {
-	albumId := tidalApi.searchAlbum(searchTrack)
-	if albumId == "" {
-		return ""
+	var albumId = tidalApi.searchAlbum(searchTrack)
+	var trackId string
+	if albumId != "" {
+		log.Println("Album lookup for: ", searchTrack)
+		trackId = checkAlbum(tidalApi, searchTrack, albumId)
 	}
-	fmt.Println("Get album: ", albumId)
-	trackIndexMap := make(map[string]DiscIndex)
-	albumTracks := tidalApi.getAlbum(albumId, searchTrack.Album, "", trackIndexMap)
-	tracks := tidalApi.getTracks(albumTracks, trackIndexMap)
+	if trackId == "" {
+		log.Println("Artist lookup for: ", searchTrack)
+		albumId = artistAlbumLookup(tidalApi, searchTrack)
+		trackId = checkAlbum(tidalApi, searchTrack, albumId)
+	}
+	if trackId == "" {
+		log.Println("Track lookup for: ", searchTrack)
+		trackId = tidalApi.searchTrack(searchTrack)
+	}
+	return trackId
+}
 
+func checkAlbum(tidalApi TidalApi, searchTrack Track, albumId string) string {
+	trackIndexMap := make(map[string]DiscIndex)
+	var albumTracks []string
+	if searchTrack.Album != "" && albumId != "" {
+		albumTracks = tidalApi.getAlbum(albumId, searchTrack, "", trackIndexMap)
+	}
+
+	tracks := tidalApi.getTracks(albumTracks, trackIndexMap)
 	for _, track := range tracks {
 		if track.Name == searchTrack.Name ||
 			(track.TrackNumber == searchTrack.TrackNumber && track.DiscNumber == searchTrack.DiscNumber) {
-			fmt.Println("Succes! Track: ", track)
+			log.Println("Succes! Track: ", track)
 			return track.Id
 		}
 	}
@@ -106,6 +143,7 @@ func trackLookup(tidalApi TidalApi, searchTrack Track) string {
 }
 
 func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
+	log.Printf("Started migrating playlist: %s to new playlist: %s", playlistId, newPlaylistName)
 	spotifyApi := NewSpotifyApi()
 	tidalApi := NewTidalApi()
 	var tracks = spotifyApi.getPlaylistTracks(playlistId, 0)
@@ -113,11 +151,8 @@ func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 	var trackIds []string
 	var notFound []Track
 	for i, track := range tracks {
+		log.Println("Lookup for track: ", track, ", index: ", i)
 		var id = trackLookup(tidalApi, track)
-		if id == "" {
-			id = tidalApi.searchTrack(track)
-		}
-		fmt.Println("Index: ", i)
 		if id == "" {
 			notFound = append(notFound, track)
 		} else {
@@ -126,73 +161,13 @@ func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 	}
 
 	newPlaylistId := tidalApi.createPlaylist(newPlaylistName)
-	fmt.Println("New Playlist ID:", newPlaylistId)
+	log.Println("New Playlist ID:", newPlaylistId)
 
-	sleep = 5000
+	sleep = 10000
 	batchSize := 20
 	for i := 0; i < len(trackIds); i += batchSize {
 		batch := trackIds[i:min(i+batchSize, len(trackIds))]
 		tidalApi.addTracks(newPlaylistId, batch)
 	}
-	fmt.Println("Not found: ", notFound)
-}
-
-type Pair struct {
-	Key   string
-	Value string
-}
-
-func getBody(response *http.Response) []byte {
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if response.StatusCode > 299 {
-		log.Fatalf("Response failed with status code: %d and\nbody: %s\n", response.StatusCode, body)
-	}
-	check(err)
-	return body
-}
-
-func readClientParams(filePath string) ClientParams {
-	var clientParams ClientParams
-	file, err := os.Open(filePath)
-	defer file.Close()
-	check(err)
-	json.NewDecoder(file).Decode(&clientParams)
-	return clientParams
-}
-
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
-func doRequestWithRetry(client *http.Client, request *http.Request, printBody bool) (map[string]any, *http.Response) {
-	time.Sleep(time.Duration(sleep) * time.Millisecond)
-	response, err := client.Do(request)
-	check(err)
-	if response.StatusCode == 429 {
-		sleep = math.Min(sleep+100, 4000)
-		fmt.Println("Rate limit hit! Increasing sleep time to: ", sleep)
-		time.Sleep(5 * time.Second)
-		return doRequestWithRetry(client, request, printBody)
-	}
-
-	reponseBody := getBody(response)
-	var result map[string]any
-	err = json.Unmarshal(reponseBody, &result)
-	if err != nil {
-		fmt.Println("Error: ", err, "Response", response)
-	}
-
-	if printBody {
-		printJson(reponseBody)
-	}
-	return result, response
-}
-
-func printJson(body []byte) {
-	var prettyJSON bytes.Buffer
-	json.Indent(&prettyJSON, body, "", "  ")
-	fmt.Println("Json: ", string(prettyJSON.Bytes()))
+	log.Println("Not found: ", notFound)
 }

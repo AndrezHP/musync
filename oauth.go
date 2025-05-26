@@ -14,6 +14,11 @@ import (
 	"os/exec"
 )
 
+type ClientParams struct {
+	ClientId     string
+	ClientSecret string
+}
+
 type OAuthHandler struct {
 	Config       *oauth2.Config
 	Ctx          context.Context
@@ -46,6 +51,15 @@ func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPa
 		saveTokenToFile(token, tokenPath)
 	}
 	return token
+}
+
+func readClientParams(filePath string) ClientParams {
+	var clientParams ClientParams
+	file, err := os.Open(filePath)
+	defer file.Close()
+	check(err)
+	json.NewDecoder(file).Decode(&clientParams)
+	return clientParams
 }
 
 func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.Request) {
