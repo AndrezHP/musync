@@ -3,8 +3,36 @@ package main
 import (
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
+
+func main() {
+	startLogging()
+	start := time.Now()
+
+	migrateSinglePlaylistToTidal("", "")
+	// test()
+
+	end := time.Now()
+	elapsed := end.Sub(start)
+	log.Println("Elapsed: ", time.Duration.Milliseconds(elapsed))
+}
+
+func test() {
+	// api := NewTidalApi()
+	// searchString := cleanSearchString("Toto TOTO")
+	// log.Println(searchString)
+	// endpoint := "/searchResults/" + searchString + "/relationships/albums"
+	// testEndpoint(api.Url+endpoint, []Pair{{"countryCode", "DK"}, {"include", "albums"}})
+
+	api := NewTidalApi()
+	searchString := cleanSearchString("Unplugged (Deluxe Edition) Eric Clapton")
+	log.Println(searchString)
+	endpoint := "/searchResults/" + searchString + "/relationships/albums"
+	testEndpoint(api.Url+endpoint, []Pair{{"countryCode", "DK"}, {"include", "albums"}})
+}
 
 var sleep float64 = 1500
 
@@ -19,41 +47,10 @@ type Track struct {
 	Name        string
 	Artist      string
 	Album       string
+	AlbumType   string
 	AlbumId     string
 	TrackNumber int
 	DiscNumber  int
-}
-
-func main() {
-	startLogging()
-	start := time.Now()
-
-	migrateSinglePlaylistToTidal("1Nn4jKAU6ipUwrCDdPGmei", "Test")
-	// test()
-
-	end := time.Now()
-	elapsed := end.Sub(start)
-	log.Println("Elapsed: ", time.Duration.Milliseconds(elapsed))
-}
-
-func test() {
-	// api := NewTidalApi()
-	// searchString := "Blanket"
-	// var endpoint = "/searchResults/" + searchString + "/relationships/artists"
-
-	// endpoint = "/artists/3947529/relationships/albums?countryCode=DK"
-	// var args = []Pair{{"countryCode", "DK"}, {"include", "tracks,albums"}}
-	// testEndpoint("https://openapi.tidal.com/"+endpoint, args)
-
-	// searchTrack := Track{
-	// 	"",
-	// 	"Caribe",
-	// 	"Michel Camilo",
-	// 	"Michel Camilo",
-	// 	"",
-	// 	9,
-	// 	1,
-	// }
 }
 
 func artistAlbumLookup(api TidalApi, searchTrack Track) string {
@@ -63,11 +60,11 @@ func artistAlbumLookup(api TidalApi, searchTrack Track) string {
 	check(err)
 
 	var result, _ = doRequestWithRetry(api.Client, req, false)
-	data, _ := result["data"].([]any)
+	data := JsonWrapper{result}.getSlice("data")
 	for i := range len(data) {
-		item, _ := data[i].(map[string]any)
-		if item["type"].(string) == "artists" {
-			return findAlbumForArtist(api, searchTrack, item["id"].(string))
+		item := makeJson(data[i])
+		if item.getString("type") == "artists" {
+			return findAlbumForArtist(api, searchTrack, item.getString("id"))
 		}
 	}
 	return ""
@@ -82,20 +79,21 @@ func findAlbumForArtist(api TidalApi, searchTrack Track, artistId string) string
 	for searchCount < 3 {
 		searchCount++
 		result, _ := doRequestWithRetry(api.Client, req, false)
-		included, _ := result["included"].([]any)
+		resultJson := JsonWrapper{result}
+		included := resultJson.getSlice("included")
 		for i := range len(included) {
-			item, _ := included[i].(map[string]any)
-			title, _ := item["attributes"].(map[string]any)["title"].(string)
+			item := makeJson(included[i])
+			title := item.get("attributes").getString("title")
 			if stringMatch(title, searchTrack.Album) {
 				log.Println("Album match!")
-				return item["id"].(string)
+				return item.getString("id")
 			}
 		}
 
-		links, _ := result["links"].(map[string]any)
-		newNext, ok := links["next"].(string)
-		if ok && searchCount < 3 {
-			log.Println("Next albums from: ", newNext)
+		links := resultJson.get("links")
+		newNext, ok := links.content["next"].(string)
+		if ok {
+			log.Println("Next albums from: ", newNext, ", search count: ", searchCount)
 			req, err = http.NewRequest("GET", api.Url+newNext, nil)
 		} else {
 			return ""
@@ -104,21 +102,40 @@ func findAlbumForArtist(api TidalApi, searchTrack Track, artistId string) string
 	return ""
 }
 
-func trackLookup(tidalApi TidalApi, searchTrack Track) string {
-	var albumId = tidalApi.searchAlbum(searchTrack)
-	var trackId string
-	if albumId != "" {
-		log.Println("Album lookup for: ", searchTrack)
-		trackId = checkAlbum(tidalApi, searchTrack, albumId)
+func trackLookup(tidalApi TidalApi, track Track) string {
+	log.Println("Album lookup for: ", track)
+	var albumId = tidalApi.searchAlbum(track, track.Album+" "+track.Artist)
+	var trackId = checkAlbum(tidalApi, track, albumId)
+	if trackId != "" {
+		log.Println("Succes:1")
 	}
+
 	if trackId == "" {
-		log.Println("Artist lookup for: ", searchTrack)
-		albumId = artistAlbumLookup(tidalApi, searchTrack)
-		trackId = checkAlbum(tidalApi, searchTrack, albumId)
+		log.Println("Artist lookup for: ", track)
+		albumId := artistAlbumLookup(tidalApi, track)
+		trackId = checkAlbum(tidalApi, track, albumId)
+		if trackId != "" {
+			log.Println("Succes:2")
+		}
 	}
+
 	if trackId == "" {
-		log.Println("Track lookup for: ", searchTrack)
-		trackId = tidalApi.searchTrack(searchTrack)
+		log.Println("Track lookup for: ", track.Name+" "+track.Artist)
+		trackId = tidalApi.searchTrack(track, track.Name+" "+track.Artist)
+		if trackId != "" {
+			log.Println("Succes:3")
+		}
+	}
+
+	if trackId == "" {
+		log.Println("Track lookup for: ", track.Name)
+		regex := regexp.MustCompile(`(?i)(the\ )`)
+		split := strings.Split(regex.ReplaceAllString(track.Artist, " "), " ")
+		partial := split[:(min(2, len(split)))]
+		trackId = tidalApi.searchTrack(track, strings.Join(partial, " "))
+		if trackId != "" {
+			log.Println("Succes:4")
+		}
 	}
 	return trackId
 }
@@ -126,19 +143,31 @@ func trackLookup(tidalApi TidalApi, searchTrack Track) string {
 func checkAlbum(tidalApi TidalApi, searchTrack Track, albumId string) string {
 	trackIndexMap := make(map[string]DiscIndex)
 	var albumTracks []string
+	log.Println("Get album for: ", searchTrack, ", with album id: ", albumId)
 	if searchTrack.Album != "" && albumId != "" {
 		albumTracks = tidalApi.getAlbum(albumId, searchTrack, "", trackIndexMap)
 	}
 
 	tracks := tidalApi.getTracks(albumTracks, trackIndexMap)
+
+	var bestSimilarity = 0.0
+	var bestId string
 	for _, track := range tracks {
-		if track.Name == searchTrack.Name ||
-			(track.TrackNumber == searchTrack.TrackNumber && track.DiscNumber == searchTrack.DiscNumber) {
-			log.Println("Succes! Track: ", track)
-			return track.Id
+		var similarity = similarity(track.Name, searchTrack.Name)
+		// if track.TrackNumber == searchTrack.TrackNumber || track.DiscNumber == searchTrack.DiscNumber {
+		//   // Is there any case where this might be useful?
+		// }
+		if similarity > bestSimilarity {
+			bestSimilarity = similarity
+			bestId = track.Id
 		}
 	}
-	return ""
+
+	if bestSimilarity < 0.8 {
+		return ""
+	} else {
+		return bestId
+	}
 }
 
 func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
@@ -162,10 +191,11 @@ func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 	newPlaylistId := tidalApi.createPlaylist(newPlaylistName)
 	log.Println("New Playlist ID:", newPlaylistId)
 
-	sleep = 10000
+	sleep = 7000
 	batchSize := 20
 	for i := 0; i < len(trackIds); i += batchSize {
 		batch := trackIds[i:min(i+batchSize, len(trackIds))]
+		log.Println("Adding Tracks: ", batchSize)
 		tidalApi.addTracks(newPlaylistId, batch)
 	}
 	log.Println("Not found: ", notFound)

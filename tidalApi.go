@@ -5,11 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/oauth2"
 	"log"
 	"net/http"
-	"regexp"
-	"strings"
+
+	"golang.org/x/oauth2"
 )
 
 type TidalApi struct {
@@ -44,12 +43,7 @@ func (api TidalApi) getCurrentUserId() string {
 	req, err := http.NewRequest("GET", api.Url+"/users/me", nil)
 	check(err)
 	result, _ := doRequestWithRetry(api.Client, req, false)
-	data, _ := result["data"].(map[string]any)
-	if id, ok := data["id"].(string); ok {
-		return id
-	} else {
-		panic("Id of current user not found")
-	}
+	return JsonWrapper{result}.get("data").getString("id")
 }
 
 func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
@@ -66,21 +60,20 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 	}
 
 	result, _ := doRequestWithRetry(api.Client, request, false)
+	resultJson := JsonWrapper{result}
 	var playlists []Playlist
-	if lists, ok := result["data"].([]any); ok && len(lists) > 0 {
-		for i := range len(lists) {
-			item, _ := lists[i].(map[string]any)
-			attributes, _ := item["attributes"].(map[string]any)
 
-			id, _ := item["id"].(string)
-			name, _ := attributes["name"].(string)
-			length, _ := attributes["numberOfItems"].(float64)
-			playlists = append(playlists, Playlist{id, name, int(length)})
-		}
+	data := resultJson.getSlice("data")
+	for i := range len(data) {
+		item := makeJson(data[i])
+		id := item.getString("id")
+		name := item.get("attributes").getString("name")
+		length := item.get("attributes").getInt("numberOfItems")
+		playlists = append(playlists, Playlist{id, name, int(length)})
 	}
 
-	links, _ := result["links"].(map[string]any)
-	newNext, ok := links["next"].(string)
+	links := resultJson.get("links")
+	newNext, ok := links.content["next"].(string)
 	if ok {
 		log.Println("Fetching next playlists from: ", newNext)
 		return append(playlists, api.getUserPlaylists(userId, newNext)...)
@@ -103,18 +96,18 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 	}
 
 	result, _ := doRequestWithRetry(api.Client, request, false)
+	resultJson := JsonWrapper{result}
+
+	data := resultJson.getSlice("data")
 	var trackIds []string
-	if data, ok := result["data"].([]any); ok && len(data) > 0 {
-		for i := range len(data) {
-			item, _ := data[i].(map[string]any)
-			id, _ := item["id"].(string)
-			trackIds = append(trackIds, id)
-		}
+	for i := range len(data) {
+		id := makeJson(data[i]).getString("id")
+		trackIds = append(trackIds, id)
 	}
 
 	tracks := api.getTracks(trackIds, nil)
-	links, _ := result["links"].(map[string]any)
-	newNext, ok := links["next"].(string)
+	links := resultJson.get("links")
+	newNext, ok := links.content["next"].(string)
 	if ok {
 		log.Println("Fetching next tracks from: ", newNext)
 		return append(tracks, api.getPlaylistTracks(playlistId, newNext)...)
@@ -151,57 +144,51 @@ func (api TidalApi) getTracksBatch(trackIds []string, trackIndexMap map[string]D
 	req.URL.RawQuery = params.Encode()
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
+	resultJson := JsonWrapper{result}
+
 	albumMap := make(map[string]string)
 	artistMap := make(map[string]string)
-	if included, ok := result["included"].([]any); ok && len(included) > 0 {
-		for i := range len(included) {
-			item, _ := included[i].(map[string]any)
-			itemId, _ := item["id"].(string)
-			itemType, _ := item["type"].(string)
-			attributes, _ := item["attributes"].(map[string]any)
 
-			if itemType == "albums" {
-				albumTitle, _ := attributes["title"].(string)
-				albumMap[itemId] = albumTitle
-			} else if itemType == "artists" {
-				name, _ := attributes["name"].(string)
-				artistMap[itemId] = name
-			} else {
-				panic("Unknown item type: " + itemType)
-			}
+	included := resultJson.getSlice("included")
+	for i := range len(included) {
+		item := makeJson(included[i])
+		itemId := item.getString("id")
+		attributes := item.get("attributes")
+
+		itemType := item.getString("type")
+		if itemType == "albums" {
+			albumMap[itemId] = attributes.getString("title")
+		} else if itemType == "artists" {
+			artistMap[itemId] = attributes.getString("name")
+		} else {
+			panic("Unknown item type: " + itemType)
 		}
 	}
 
 	var tracks []Track
-	if data, ok := result["data"].([]any); ok && len(data) > 0 {
-		for i := range len(data) {
-			item, _ := data[i].(map[string]any)
+	data := resultJson.getSlice("data")
+	for i := range len(data) {
+		item := makeJson(data[i])
+		trackId := item.getString("id")
+		trackTitle := item.get("attributes").getString("title")
 
-			trackId, _ := item["id"].(string)
-			attributes, _ := item["attributes"].(map[string]any)
-			relationships, _ := item["relationships"].(map[string]any)
+		relationships := item.get("relationships")
+		albums := relationships.get("albums")
+		albumId := albums.getAt("data", 0).getString("id")
 
-			trackTitle, _ := attributes["title"].(string)
+		artists := relationships.get("artists")
+		artistId := artists.getAt("data", 0).getString("id")
 
-			albums, _ := relationships["albums"].(map[string]any)
-			firstAlbum, _ := albums["data"].([]any)[0].(map[string]any)
-			albumId, _ := firstAlbum["id"].(string)
-
-			artists, _ := relationships["artists"].(map[string]any)
-			firstArtist, _ := artists["data"].([]any)[0].(map[string]any)
-			artistId, _ := firstArtist["id"].(string)
-
-			var trackNumber = 0
-			var discNumber = 0
-			discIndex, ok := trackIndexMap[trackId]
-			if ok {
-				trackNumber = discIndex.TrackNumber
-				discNumber = discIndex.DiscNumber
-			}
-
-			track := Track{trackId, trackTitle, artistMap[artistId], albumMap[albumId], albumId, trackNumber, discNumber}
-			tracks = append(tracks, track)
+		var trackNumber = 0
+		var discNumber = 0
+		discIndex, ok := trackIndexMap[trackId]
+		if ok {
+			trackNumber = discIndex.TrackNumber
+			discNumber = discIndex.DiscNumber
 		}
+
+		track := Track{trackId, trackTitle, artistMap[artistId], "", albumMap[albumId], albumId, trackNumber, discNumber}
+		tracks = append(tracks, track)
 	}
 
 	return tracks
@@ -226,6 +213,7 @@ func (api TidalApi) addTracks(playlistId string, trackIds []string) {
 	req, err := http.NewRequest("POST", endpoint+"?countryCode=DK", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	check(err)
+	log.Println("Adding tracks with request: ", req)
 
 	_, response := doRequestWithRetry(api.Client, req, false)
 	if response.StatusCode != 201 {
@@ -253,67 +241,54 @@ func (api TidalApi) createPlaylist(name string) string {
 	check(err)
 
 	result, _ := doRequestWithRetry(api.Client, req, false)
-	data, _ := result["data"].(map[string]any)
-	if id, ok := data["id"].(string); ok {
+	data := JsonWrapper{result}.get("data")
+	if id, ok := data.content["id"].(string); ok {
 		return id
 	} else {
 		panic("Id of new playlist not found")
 	}
 }
 
-// TODO Maybe use this for comparison also (with the addition of removing anything remaster related and -)
-func cleanSearchString(input string) string {
-	regex := regexp.MustCompile(`\[.+\]|[@#$%^&*\[\]:;,?/~\\|]|\b[Tt]rio\b|"`)
-	return regex.ReplaceAllString(input, " ")
-}
-
-func (api TidalApi) searchTrack(track Track) string {
-	searchString := cleanSearchString(track.Name + " " + track.Artist)
-	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/topHits", searchString)
-
-	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
+func (api TidalApi) searchTrack(track Track, searchString string) string {
+	clean := cleanSearchString(searchString)
+	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/tracks", clean)
+	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK&include=tracks", nil)
 	check(err)
-
 	result, _ := doRequestWithRetry(api.Client, req, false)
-	data, _ := result["data"].([]any)
-	for i := range len(data) {
-		item, _ := data[i].(map[string]any)
-		if item["type"].(string) == "tracks" {
-			return item["id"].(string)
+
+	included := JsonWrapper{result}.getSlice("included")
+	for i := range len(included) {
+		item := makeJson(included[i])
+		title := item.get("attributes").getString("title")
+		version := item.get("attributes").getString("version")
+		if approximateMatch(title, track.Name+" "+version, 0.2) {
+			return item.getString("id")
 		}
 	}
-	if len(data) > 0 {
-		trackId, _ := data[0].(map[string]any)["id"].(string)
-		return trackId
-	} else {
-		return ""
-	}
+	return ""
 }
 
-func (api TidalApi) searchAlbum(track Track) string {
-	searchString := cleanSearchString(track.Album + " " + track.Artist)
-	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/albums", searchString)
-	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
+func (api TidalApi) searchAlbum(track Track, searchString string) string {
+	clean := cleanSearchString(searchString)
+	endpoint := api.Url + fmt.Sprintf("/searchResults/%s/relationships/albums", clean)
+	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK&include=albums", nil)
 	check(err)
 
-	log.Println("Searching album for: ", track)
-	result, _ := doRequestWithRetry(api.Client, req, false)
-	data, _ := result["data"].([]any)
-	if len(data) > 0 {
-		trackId, _ := data[0].(map[string]any)["id"].(string)
-		return trackId
-	} else {
-		return ""
+	var result, _ = doRequestWithRetry(api.Client, req, false)
+	included := JsonWrapper{result}.getSlice("included")
+	for i := range len(included) {
+		item := makeJson(included[i])
+		title := item.get("attributes").getString("title")
+		if stringMatch(title, track.Album) {
+			return item.getString("id")
+		}
 	}
+	return ""
 }
 
 type DiscIndex struct {
 	TrackNumber int
 	DiscNumber  int
-}
-
-func stringMatch(str1 string, str2 string) bool {
-	return strings.ToLower(str1) == strings.ToLower(str2)
 }
 
 func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, trackIndexMap map[string]DiscIndex) []string {
@@ -331,19 +306,21 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 
 	check(err)
 	result, _ := doRequestWithRetry(api.Client, req, false)
+	resultJson := JsonWrapper{result}
 
 	if next == "" {
-		albumName, _ := result["data"].(map[string]any)["attributes"].(map[string]any)["title"].(string)
+		albumName := resultJson.get("data").get("attributes").getString("title")
 		var albumArtist = ""
-		included, _ := result["included"].([]any)
+
+		included := resultJson.getSlice("included")
 		for i := range len(included) {
-			inc, _ := included[i].(map[string]any)
-			if inc["type"].(string) == "artists" {
-				albumArtist = inc["attributes"].(map[string]any)["name"].(string)
+			inc := makeJson(included[i])
+			if inc.getString("type") == "artists" {
+				albumArtist = inc.get("attributes").getString("name")
 			}
 		}
 
-		if !stringMatch(albumArtist, searchTrack.Artist) || !stringMatch(albumName, searchTrack.Album) {
+		if !stringMatch(albumArtist, searchTrack.Artist) {
 			log.Println("Album or artist did not match!", albumArtist, albumName)
 			return nil
 		}
@@ -352,21 +329,21 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 	var links map[string]any
 	var data []any
 	if next == "" {
-		relationships := result["data"].(map[string]any)["relationships"].(map[string]any)
-		data = relationships["items"].(map[string]any)["data"].([]any)
-		links = relationships["items"].(map[string]any)["links"].(map[string]any)
+		relationships := resultJson.get("data").get("relationships")
+		data = relationships.get("items").getSlice("data")
+		links = relationships.get("items").get("links").content
 	} else {
-		data = result["data"].([]any)
-		links = result["links"].(map[string]any)
+		data = resultJson.getSlice("data")
+		links = resultJson.get("links").content
 	}
 
 	var trackIds []string
 	for i := range len(data) {
-		item, _ := data[i].(map[string]any)
-		id, _ := item["id"].(string)
+		item := makeJson(data[i])
+		id := item.getString("id")
+		trackNumber := item.get("meta").getInt("trackNumber")
+		discNumber := item.get("meta").getInt("volumeNumber")
 
-		trackNumber, _ := item["meta"].(map[string]any)["trackNumber"].(float64)
-		discNumber, _ := item["meta"].(map[string]any)["volumeNumber"].(float64)
 		trackIndexMap[id] = DiscIndex{int(trackNumber), int(discNumber)}
 		trackIds = append(trackIds, id)
 	}
