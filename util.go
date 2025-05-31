@@ -67,6 +67,10 @@ func doRequestWithRetry(client *http.Client, request *http.Request, printBody bo
 		time.Sleep(5 * time.Second)
 		return doRequestWithRetry(client, request, printBody)
 	}
+	if response.StatusCode >= 500 {
+		time.Sleep(10 * time.Second)
+		return doRequestWithRetry(client, request, printBody)
+	}
 
 	reponseBody := getBody(response)
 	var result map[string]any
