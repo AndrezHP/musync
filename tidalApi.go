@@ -328,7 +328,7 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 		req, err = http.NewRequest("GET", api.Url+"/albums/"+albumId, nil)
 		params := req.URL.Query()
 		params.Set("countryCode", "DK")
-		params.Set("include", "items,albums,artists")
+		params.Set("include", "items,artists")
 		req.URL.RawQuery = params.Encode()
 	} else {
 		req, err = http.NewRequest("GET", api.Url+next+"&include=albums", nil)
@@ -339,19 +339,22 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 	resultJson := JsonWrapper{result}
 
 	if next == "" {
-		albumName := resultJson.get("data").get("attributes").getString("title")
-		var albumArtist = ""
-
 		included := resultJson.getSlice("included")
+		var artistMatchFound = false
+		var artists []string
 		for i := range len(included) {
-			inc := makeJson(included[i])
-			if inc.getString("type") == "artists" {
-				albumArtist = inc.get("attributes").getString("name")
+			item := makeJson(included[i])
+			attributes := item.get("attributes")
+			if item.getString("type") == "artists" {
+				artists = append(artists, attributes.getString("name"))
+			}
+			if stringMatch(artists[len(artists)-1], searchTrack.Artist) {
+				artistMatchFound = true
 			}
 		}
 
-		if !stringMatch(albumArtist, searchTrack.Artist) {
-			log.Println("Album artist did not match!", albumArtist, albumName)
+		if !artistMatchFound {
+			log.Println("Album artist match not found!", searchTrack.Artist, artists)
 			return nil
 		}
 	}
