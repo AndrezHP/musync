@@ -95,6 +95,10 @@ func printJson(body []byte) {
 	fmt.Println("Json: ", string(prettyJSON.Bytes()))
 }
 
+func printTrack(track Track) {
+	log.Println(track.Name, " - ", track.Artist, " - ", track.Album)
+}
+
 func check(e error) {
 	if e != nil {
 		log.Println("ERROR: ", e)
@@ -156,21 +160,20 @@ func levenshteinDistance(str1, str2 string) int {
 	return column[strLen1]
 }
 
-// TODO Maybe use this for comparison also (with the addition of removing anything remaster related and -)
 func cleanSearchString(input string) string {
 	// bracketedWords := `(?i)[\(\[][^)\]]*(master|expand|version|reissue)[^)\]]*[\)\]]`
 	// words := `|(?i)(re-*master(ed)*|edition|deluxe|version|trio)` // TODO Maybe have these sometimes?
-	words := `|(?i)(re-*master(ed)*|version|trio|reissue)`
-	semiColon := `(;.*)`
-	binder := `|(\s-\s)`
+	binder := `(\s-\s)`
 	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,?/~\\|]`
 	year := `|((20|19)\d{2})`
-	feat := `|(feat.*)`
-	regex := regexp.MustCompile(semiColon + words + binder + symbols + year + feat)
+	words := `|(?i)(re-*master(ed)*|version|reissue|radio|\sedit\s|\strio\s)`
+	regex := regexp.MustCompile(binder + symbols + year + words)
 	var result = regex.ReplaceAllString(input, " ")
-
-	// mix := `(?i)[\(\[][^)\]]*(remix)[^)\]]*[\)\]]`
 	return regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
+}
+
+func cleanTrackTitle(input string) string {
+	return regexp.MustCompile(`(;.*)|(feat.*)|[\(\)\[\]]`).ReplaceAllString(input, "")
 }
 
 func relativeDistance(str1, str2 string) float64 {
