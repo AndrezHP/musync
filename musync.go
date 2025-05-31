@@ -45,6 +45,7 @@ type Playlist struct {
 type Track struct {
 	Id          string
 	Name        string
+	Version     string
 	Artist      string
 	Album       string
 	AlbumType   string
@@ -153,7 +154,9 @@ func checkAlbum(tidalApi TidalApi, searchTrack Track, albumId string) string {
 	var bestSimilarity = 0.0
 	var bestId string
 	for _, track := range tracks {
-		var similarity = similarity(track.Name, searchTrack.Name)
+		trackName := track.Name + " " + track.Version
+		var similarity = similarity(trackName, searchTrack.Name)
+		log.Println("Similarity for: ", trackName, " and ", searchTrack.Name, " = ", similarity)
 		// if track.TrackNumber == searchTrack.TrackNumber || track.DiscNumber == searchTrack.DiscNumber {
 		//   // Is there any case where this might be useful?
 		// }
@@ -198,5 +201,9 @@ func migrateSinglePlaylistToTidal(playlistId string, newPlaylistName string) {
 		log.Println("Adding Tracks: ", batchSize)
 		tidalApi.addTracks(newPlaylistId, batch)
 	}
-	log.Println("Not found: ", notFound)
+
+	log.Println(len(notFound), " Not found: ")
+	for _, missing := range notFound {
+		printTrack(missing)
+	}
 }

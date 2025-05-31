@@ -111,7 +111,7 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 func trackFromMap(track JsonWrapper) Track {
 	id := track.getString("id")
 
-	trackName := track.getString("name")
+	trackName := cleanTrackTitle(track.getString("name"))
 	trackNumber := track.getInt("track_number")
 	discNumber := track.getInt("disc_number")
 
@@ -122,7 +122,7 @@ func trackFromMap(track JsonWrapper) Track {
 	firstArtist := track.getAt("artists", 0)
 	artistName := firstArtist.getString("name")
 
-	return Track{id, trackName, artistName, albumName, albumType, albumId, int(trackNumber), int(discNumber)}
+	return Track{id, trackName, "", artistName, albumName, albumType, albumId, trackNumber, discNumber}
 }
 
 func (api SpotifyApi) searchTrack(name string, artist string, album string) Track {

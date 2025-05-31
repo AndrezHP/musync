@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 
 	"golang.org/x/oauth2"
 )
@@ -171,6 +172,7 @@ func (api TidalApi) getTracksBatch(trackIds []string, trackIndexMap map[string]D
 		item := makeJson(data[i])
 		trackId := item.getString("id")
 		trackTitle := item.get("attributes").getString("title")
+		version := item.get("attributes").getString("version")
 
 		relationships := item.get("relationships")
 		albums := relationships.get("albums")
@@ -187,7 +189,17 @@ func (api TidalApi) getTracksBatch(trackIds []string, trackIndexMap map[string]D
 			discNumber = discIndex.DiscNumber
 		}
 
-		track := Track{trackId, trackTitle, artistMap[artistId], "", albumMap[albumId], albumId, trackNumber, discNumber}
+		track := Track{
+			trackId,
+			cleanTrackTitle(trackTitle),
+			version,
+			artistMap[artistId],
+			"",
+			albumMap[albumId],
+			albumId,
+			trackNumber,
+			discNumber,
+		}
 		tracks = append(tracks, track)
 	}
 
@@ -255,14 +267,32 @@ func (api TidalApi) searchTrack(track Track, searchString string) string {
 	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK&include=tracks", nil)
 	check(err)
 	result, _ := doRequestWithRetry(api.Client, req, false)
+	resultJson := JsonWrapper{result}
 
-	included := JsonWrapper{result}.getSlice("included")
+	titleMap := make(map[string]string)
+	included := resultJson.getSlice("included")
 	for i := range len(included) {
 		item := makeJson(included[i])
-		title := item.get("attributes").getString("title")
+		title := cleanTrackTitle(item.get("attributes").getString("title"))
 		version := item.get("attributes").getString("version")
-		if approximateMatch(title, track.Name+" "+version, 0.2) {
-			return item.getString("id")
+
+		remix := regexp.MustCompile(`(?i)\sremix\s`)
+		if remix.MatchString(title+" "+version) && !remix.MatchString(track.Name) {
+			titleMap[item.getString("id")] = ""
+		} else {
+			titleMap[item.getString("id")] = title
+		}
+	}
+
+	// Makes sure to look at the included tracks in the order it was given
+	data := resultJson.getSlice("data")
+	for i := range len(data) {
+		item := makeJson(data[i])
+		id := item.getString("id")
+		title := titleMap[id]
+
+		if title != "" && approximateMatch(title, track.Name, 0.2) {
+			return id
 		}
 	}
 	return ""
@@ -321,7 +351,7 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 		}
 
 		if !stringMatch(albumArtist, searchTrack.Artist) {
-			log.Println("Album or artist did not match!", albumArtist, albumName)
+			log.Println("Album artist did not match!", albumArtist, albumName)
 			return nil
 		}
 	}
