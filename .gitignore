@@ -30,8 +30,3 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-/.spotifyParams.json
-/.spotifyToken.json
-/.tidalParams.json
-/.tidalToken.json
-/log.txt
