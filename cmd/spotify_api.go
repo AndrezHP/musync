@@ -68,7 +68,7 @@ func (api SpotifyApi) GetUserPlaylists(userId string, offset int) []Playlist {
 		playlist := Playlist{
 			item.getString("id"),
 			item.getString("name"),
-			item.getInt("total"),
+			item.get("tracks").getInt("total"),
 		}
 		playlists = append(playlists, playlist)
 	}
