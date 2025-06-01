@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"log"
 	"math"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -57,19 +56,29 @@ func (wrapper JsonWrapper) getIntAt(key string, index int) int {
 	return int(float)
 }
 
-func doRequestWithRetry(client *http.Client, request *http.Request, printBody bool) (map[string]any, *http.Response) {
+var sleep float64 = 1500
+
+func Sleep() float64 {
+	return sleep
+}
+
+func SetRequestSleep(newValue float64) {
+	sleep = newValue
+}
+
+func DoRequest(client *http.Client, request *http.Request, printBody bool) (map[string]any, *http.Response) {
 	time.Sleep(time.Duration(sleep) * time.Millisecond)
 	response, err := client.Do(request)
-	check(err)
+	Check(err)
 	if response.StatusCode == 429 {
 		sleep = math.Min(sleep+100, 4000)
 		log.Println("Rate limit hit! Increasing sleep time to:", sleep)
-		time.Sleep(5 * time.Second)
-		return doRequestWithRetry(client, request, printBody)
+		time.Sleep(time.Duration(sleep) * time.Millisecond)
+		return DoRequest(client, request, printBody)
 	}
 	if response.StatusCode >= 500 {
 		time.Sleep(10 * time.Second)
-		return doRequestWithRetry(client, request, printBody)
+		return DoRequest(client, request, printBody)
 	}
 
 	reponseBody := getBody(response)
@@ -83,26 +92,10 @@ func doRequestWithRetry(client *http.Client, request *http.Request, printBody bo
 	}
 
 	if printBody {
-		printJson(reponseBody)
+		log.Println("Json:", formatJsonString(reponseBody))
 	}
 
 	return result, response
-}
-
-func printJson(body []byte) {
-	var prettyJSON bytes.Buffer
-	json.Indent(&prettyJSON, body, "", "  ")
-	fmt.Println("Json:", string(prettyJSON.Bytes()))
-}
-
-func printTrack(track Track) {
-	log.Println(track.Name, "-", track.Artist, "-", track.Album)
-}
-
-func check(e error) {
-	if e != nil {
-		log.Println("ERROR:", e)
-	}
 }
 
 func getBody(response *http.Response) []byte {
@@ -112,17 +105,72 @@ func getBody(response *http.Response) []byte {
 		error := fmt.Sprint("Response failed with status code:", response.StatusCode, "and body:", body, ",response:", response.Request)
 		log.Fatalf(error)
 	}
-	check(err)
+	Check(err)
 	return body
 }
 
-func startLogging() {
-	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatal(err)
+func formatJsonString(body []byte) string {
+	var prettyJSON bytes.Buffer
+	json.Indent(&prettyJSON, body, "", "  ")
+	return string(prettyJSON.Bytes())
+}
+
+// Error handling
+func Check(e error) {
+	if e != nil {
+		log.Println("ERROR:", e)
 	}
-	multiWriter := io.MultiWriter(os.Stdout, file)
-	log.SetOutput(multiWriter)
+}
+
+// regex
+func cleanString(input string) string {
+	binder := `(\s-\s)`
+	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,?/~\\|]`
+	year := `|((20)\d{2})`
+	words := `|(?i)(re-*master(ed)*|version|reissue|\strio\s)`
+	regex := regexp.MustCompile(binder + symbols + year + words)
+	var result = regex.ReplaceAllString(input, " ")
+	return regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
+}
+
+func cleanTitle(input string) string {
+	return regexp.MustCompile(`(;.*)|(feat.*)|[\(\)\[\]]`).ReplaceAllString(input, "")
+}
+
+// Distance/matching
+func relativeDistance(str1, str2 string) float64 {
+	clean1 := strings.TrimSpace(strings.ToLower(cleanString(str1)))
+	clean2 := strings.TrimSpace(strings.ToLower(cleanString(str2)))
+	dist := float64(levenshteinDistance(clean1, clean2))
+	maxLength := float64(max(len(clean1), len(clean2)))
+	log.Println(str1, "->", clean1)
+	log.Println(str2, "->", clean2)
+	log.Println(dist, dist/maxLength)
+	return dist / maxLength
+}
+
+func approximateMatch(str1, str2 string, approx float64) bool {
+	approximation := relativeDistance(str1, str2)
+	return approximation < approx
+}
+
+func stringMatch(str1, str2 string) bool {
+	clean1 := strings.TrimSpace(strings.ToLower(cleanString(str1)))
+	clean2 := strings.TrimSpace(strings.ToLower(cleanString(str2)))
+	log.Println(str1, "->", clean1)
+	log.Println(str2, "->", clean2)
+	match := clean1 == clean2
+	if !match {
+		log.Println(clean1, "=", clean2, ": Did not match")
+	}
+	return match
+}
+
+func similarity(str1, str2 string) float64 {
+	clean1 := strings.TrimSpace(strings.ToLower(cleanString(str1)))
+	clean2 := strings.TrimSpace(strings.ToLower(cleanString(str2)))
+	similarity := float64(jaroWinklerSimilarity(clean1, clean2))
+	return similarity
 }
 
 func levenshteinDistance(str1, str2 string) int {
@@ -158,55 +206,6 @@ func levenshteinDistance(str1, str2 string) int {
 	}
 
 	return column[strLen1]
-}
-
-func cleanSearchString(input string) string {
-	binder := `(\s-\s)`
-	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,?/~\\|]`
-	year := `|((20)\d{2})`
-	words := `|(?i)(re-*master(ed)*|version|reissue|\strio\s)`
-	regex := regexp.MustCompile(binder + symbols + year + words)
-	var result = regex.ReplaceAllString(input, " ")
-	return regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
-}
-
-func cleanTrackTitle(input string) string {
-	return regexp.MustCompile(`(;.*)|(feat.*)|[\(\)\[\]]`).ReplaceAllString(input, "")
-}
-
-func relativeDistance(str1, str2 string) float64 {
-	clean1 := strings.TrimSpace(strings.ToLower(cleanSearchString(str1)))
-	clean2 := strings.TrimSpace(strings.ToLower(cleanSearchString(str2)))
-	dist := float64(levenshteinDistance(clean1, clean2))
-	maxLength := float64(max(len(clean1), len(clean2)))
-	log.Println(str1, "->", clean1)
-	log.Println(str2, "->", clean2)
-	log.Println(dist, dist/maxLength)
-	return dist / maxLength
-}
-
-func approximateMatch(str1, str2 string, approx float64) bool {
-	approximation := relativeDistance(str1, str2)
-	return approximation < approx
-}
-
-func stringMatch(str1, str2 string) bool {
-	clean1 := strings.TrimSpace(strings.ToLower(cleanSearchString(str1)))
-	clean2 := strings.TrimSpace(strings.ToLower(cleanSearchString(str2)))
-	log.Println(str1, "->", clean1)
-	log.Println(str2, "->", clean2)
-	match := clean1 == clean2
-	if !match {
-		log.Println(clean1, "=", clean2, ": Did not match")
-	}
-	return match
-}
-
-func similarity(str1, str2 string) float64 {
-	clean1 := strings.TrimSpace(strings.ToLower(cleanSearchString(str1)))
-	clean2 := strings.TrimSpace(strings.ToLower(cleanSearchString(str2)))
-	similarity := float64(jaroWinklerSimilarity(clean1, clean2))
-	return similarity
 }
 
 func jaroWinklerSimilarity(str1, str2 string) float32 {

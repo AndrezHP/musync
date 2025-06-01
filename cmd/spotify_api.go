@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -37,14 +37,14 @@ func NewSpotifyApi() SpotifyApi {
 	}
 }
 
-func (api SpotifyApi) getCurrentUserId() string {
+func (api SpotifyApi) GetCurrentUserId() string {
 	res, err := api.Client.Get(api.Url + "v1/me")
-	check(err)
+	Check(err)
 	responseBody := getBody(res)
 
 	var result map[string]any
 	err = json.Unmarshal(responseBody, &result)
-	check(err)
+	Check(err)
 
 	if id, ok := result["id"].(string); ok {
 		return id
@@ -53,13 +53,13 @@ func (api SpotifyApi) getCurrentUserId() string {
 	}
 }
 
-func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
+func (api SpotifyApi) GetUserPlaylists(userId string, offset int) []Playlist {
 	var endpoint = fmt.Sprintf("v1/users/%s/playlists", userId)
 	endpoint += "?limit=50&offset=" + strconv.Itoa(offset)
 	req, err := http.NewRequest("GET", api.Url+endpoint, nil)
-	check(err)
+	Check(err)
 
-	result, _ := doRequestWithRetry(api.Client, req, false)
+	result, _ := DoRequest(api.Client, req, false)
 	var playlists []Playlist
 	jsonResult := JsonWrapper{result}
 	items := jsonResult.getSlice("items")
@@ -75,23 +75,23 @@ func (api SpotifyApi) getUserPlaylists(userId string, offset int) []Playlist {
 
 	newOffset := offset + 50
 	if newOffset < jsonResult.getInt("total") {
-		return append(playlists, api.getUserPlaylists(userId, newOffset)...)
+		return append(playlists, api.GetUserPlaylists(userId, newOffset)...)
 	} else {
 		return playlists
 	}
 }
 
-func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
+func (api SpotifyApi) GetPlaylistTracks(playlistId string, offset int) []Track {
 	endpoint := fmt.Sprintf("v1/playlists/%s/tracks", playlistId)
 	req, err := http.NewRequest("GET", api.Url+endpoint, nil)
-	check(err)
+	Check(err)
 
 	params := req.URL.Query()
 	params.Set("limit", "50")
 	params.Set("offset", strconv.Itoa(offset))
 	req.URL.RawQuery = params.Encode()
 
-	result, _ := doRequestWithRetry(api.Client, req, false)
+	result, _ := DoRequest(api.Client, req, false)
 	jsonResult := JsonWrapper{result}
 	var tracks []Track
 	items := jsonResult.getSlice("items")
@@ -102,7 +102,7 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 
 	newOffset := offset + 50
 	if newOffset < jsonResult.getInt("total") {
-		return append(tracks, api.getPlaylistTracks(playlistId, newOffset)...)
+		return append(tracks, api.GetPlaylistTracks(playlistId, newOffset)...)
 	} else {
 		return tracks
 	}
@@ -111,7 +111,7 @@ func (api SpotifyApi) getPlaylistTracks(playlistId string, offset int) []Track {
 func trackFromMap(track JsonWrapper) Track {
 	id := track.getString("id")
 
-	trackName := cleanTrackTitle(track.getString("name"))
+	trackName := cleanTitle(track.getString("name"))
 	trackNumber := track.getInt("track_number")
 	discNumber := track.getInt("disc_number")
 
@@ -126,16 +126,16 @@ func trackFromMap(track JsonWrapper) Track {
 }
 
 func (api SpotifyApi) searchTrack(name string, artist string, album string) Track {
-	name = cleanSearchString(name)
-	artist = cleanSearchString(artist)
-	album = cleanSearchString(album)
+	name = cleanString(name)
+	artist = cleanString(artist)
+	album = cleanString(album)
 	searchString := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", name, artist, album)
 	endpoint := "v1/search" + "?type=track&q=" + searchString
 	req, err := http.NewRequest("GET", api.Url+endpoint, nil)
-	check(err)
+	Check(err)
 
-	result, _ := doRequestWithRetry(api.Client, req, false)
-	check(err)
+	result, _ := DoRequest(api.Client, req, false)
+	Check(err)
 
 	tracks := JsonWrapper{result}.get("tracks")
 	track := tracks.getAt("items", 0)

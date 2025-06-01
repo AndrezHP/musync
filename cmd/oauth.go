@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPa
 	var token *oauth2.Token
 	if tokenFileExists {
 		token, err = readTokenFromFile(tokenPath)
-		check(err)
+		Check(err)
 	} else {
 		handler := OAuthHandler{
 			config,
@@ -57,7 +57,7 @@ func readClientParams(filePath string) ClientParams {
 	var clientParams ClientParams
 	file, err := os.Open(filePath)
 	defer file.Close()
-	check(err)
+	Check(err)
 	json.NewDecoder(file).Decode(&clientParams)
 	return clientParams
 }
@@ -73,13 +73,13 @@ func (oauth OAuthHandler) callbackHandler(writer http.ResponseWriter, req *http.
 	} else {
 		token, err = oauth.Config.Exchange(oauth.Ctx, code, oauth2.SetAuthURLParam("code_verifier", oauth.VerifierCode))
 	}
-	check(err)
+	Check(err)
 
 	oauth.TokenChannel <- token
 
 	client := oauth.Config.Client(oauth.Ctx, token)
 	resp, err := client.Get(oauth.ApiUrl)
-	check(err)
+	Check(err)
 
 	log.Println("Authentication successful")
 	defer resp.Body.Close()
@@ -119,7 +119,7 @@ func readTokenFromFile(filePath string) (*oauth2.Token, error) {
 	var token oauth2.Token
 	file, err := os.Open(filePath)
 	defer file.Close()
-	check(err)
+	Check(err)
 
 	json.NewDecoder(file).Decode(&token)
 	return &token, err

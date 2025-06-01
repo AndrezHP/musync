@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/AndrezHP/musync/cmd"
 	"log"
 	"net/http"
 )
@@ -11,16 +12,16 @@ type Pair struct {
 }
 
 func testEndpoint(endpoint string, args []Pair) {
-	tidalApi := NewTidalApi()
+	tidalApi := cmd.NewTidalApi()
 	req, err := http.NewRequest("GET", endpoint, nil)
-	check(err)
+	cmd.Check(err)
 
 	params := req.URL.Query()
 	for _, arg := range args {
 		params.Set(arg.Key, arg.Value)
 	}
 	req.URL.RawQuery = params.Encode()
-	doRequestWithRetry(tidalApi.Client, req, true)
+	cmd.DoRequest(tidalApi.Client, req, true)
 }
 
 // func testStuff() {
@@ -60,9 +61,9 @@ func testEndpoint(endpoint string, args []Pair) {
 
 // Does not work...
 func deleteAllTestPlaylists() {
-	api := NewTidalApi()
-	userId := api.getCurrentUserId()
-	playlists := api.getUserPlaylists(userId, "")
+	api := cmd.NewTidalApi()
+	userId := api.GetCurrentUserId()
+	playlists := api.GetUserPlaylists(userId, "")
 	for _, playlist := range playlists {
 		if playlist.Name == "Test" {
 			deletePlaylist(api, playlist.Id)
@@ -70,10 +71,10 @@ func deleteAllTestPlaylists() {
 	}
 }
 
-func deletePlaylist(api TidalApi, playlistId string) {
+func deletePlaylist(api cmd.TidalApi, playlistId string) {
 	req, err := http.NewRequest("DELETE", api.Url+"/playlists/"+playlistId, nil)
-	check(err)
-	_, response := doRequestWithRetry(api.Client, req, false)
+	cmd.Check(err)
+	_, response := cmd.DoRequest(api.Client, req, false)
 	if response.StatusCode == 204 {
 		log.Println("Playlist deleted: ", playlistId)
 	}
