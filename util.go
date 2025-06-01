@@ -63,7 +63,7 @@ func doRequestWithRetry(client *http.Client, request *http.Request, printBody bo
 	check(err)
 	if response.StatusCode == 429 {
 		sleep = math.Min(sleep+100, 4000)
-		log.Println("Rate limit hit! Increasing sleep time to: ", sleep)
+		log.Println("Rate limit hit! Increasing sleep time to:", sleep)
 		time.Sleep(5 * time.Second)
 		return doRequestWithRetry(client, request, printBody)
 	}
@@ -77,9 +77,9 @@ func doRequestWithRetry(client *http.Client, request *http.Request, printBody bo
 	err = json.Unmarshal(reponseBody, &result)
 
 	if err != nil && response.StatusCode != 201 {
-		log.Println("Error: ", err, "Response", response)
+		log.Println("Error:", err, "Response", response)
 	} else if response.StatusCode == 201 {
-		log.Println("Resource created on: ", request.URL)
+		log.Println("Resource created on:", request.URL)
 	}
 
 	if printBody {
@@ -92,16 +92,16 @@ func doRequestWithRetry(client *http.Client, request *http.Request, printBody bo
 func printJson(body []byte) {
 	var prettyJSON bytes.Buffer
 	json.Indent(&prettyJSON, body, "", "  ")
-	fmt.Println("Json: ", string(prettyJSON.Bytes()))
+	fmt.Println("Json:", string(prettyJSON.Bytes()))
 }
 
 func printTrack(track Track) {
-	log.Println(track.Name, " - ", track.Artist, " - ", track.Album)
+	log.Println(track.Name, "-", track.Artist, "-", track.Album)
 }
 
 func check(e error) {
 	if e != nil {
-		log.Println("ERROR: ", e)
+		log.Println("ERROR:", e)
 	}
 }
 
@@ -109,7 +109,7 @@ func getBody(response *http.Response) []byte {
 	body, err := io.ReadAll(response.Body)
 	response.Body.Close()
 	if response.StatusCode > 299 {
-		error := fmt.Sprint("Response failed with status code: ", response.StatusCode, " and body: ", body, ", response: ", response.Request)
+		error := fmt.Sprint("Response failed with status code:", response.StatusCode, "and body:", body, ",response:", response.Request)
 		log.Fatalf(error)
 	}
 	check(err)
@@ -161,12 +161,10 @@ func levenshteinDistance(str1, str2 string) int {
 }
 
 func cleanSearchString(input string) string {
-	// bracketedWords := `(?i)[\(\[][^)\]]*(master|expand|version|reissue)[^)\]]*[\)\]]`
-	// words := `|(?i)(re-*master(ed)*|edition|deluxe|version|trio)` // TODO Maybe have these sometimes?
 	binder := `(\s-\s)`
 	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,?/~\\|]`
-	year := `|((20|19)\d{2})`
-	words := `|(?i)(re-*master(ed)*|version|reissue|radio|\sedit\s|\strio\s)`
+	year := `|((20)\d{2})`
+	words := `|(?i)(re-*master(ed)*|version|reissue|\strio\s)`
 	regex := regexp.MustCompile(binder + symbols + year + words)
 	var result = regex.ReplaceAllString(input, " ")
 	return regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
@@ -181,10 +179,9 @@ func relativeDistance(str1, str2 string) float64 {
 	clean2 := strings.TrimSpace(strings.ToLower(cleanSearchString(str2)))
 	dist := float64(levenshteinDistance(clean1, clean2))
 	maxLength := float64(max(len(clean1), len(clean2)))
-	log.Println(str1 + " -> " + clean1)
-	log.Println(str2 + " -> " + clean2)
-	log.Println(dist)
-	log.Println(dist / maxLength)
+	log.Println(str1, "->", clean1)
+	log.Println(str2, "->", clean2)
+	log.Println(dist, dist/maxLength)
 	return dist / maxLength
 }
 
@@ -194,14 +191,13 @@ func approximateMatch(str1, str2 string, approx float64) bool {
 }
 
 func stringMatch(str1, str2 string) bool {
-	log.Println("String Match Check: ")
 	clean1 := strings.TrimSpace(strings.ToLower(cleanSearchString(str1)))
 	clean2 := strings.TrimSpace(strings.ToLower(cleanSearchString(str2)))
-	log.Println(str1 + " -> " + clean1)
-	log.Println(str2 + " -> " + clean2)
+	log.Println(str1, "->", clean1)
+	log.Println(str2, "->", clean2)
 	match := clean1 == clean2
 	if !match {
-		log.Println(clean1, " = ", clean2, " : Did not match")
+		log.Println(clean1, "=", clean2, ": Did not match")
 	}
 	return match
 }

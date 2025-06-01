@@ -76,7 +76,7 @@ func (api TidalApi) getUserPlaylists(userId string, next string) []Playlist {
 	links := resultJson.get("links")
 	newNext, ok := links.content["next"].(string)
 	if ok {
-		log.Println("Fetching next playlists from: ", newNext)
+		log.Println("Fetching next playlists from:", newNext)
 		return append(playlists, api.getUserPlaylists(userId, newNext)...)
 	} else {
 		return playlists
@@ -110,7 +110,7 @@ func (api TidalApi) getPlaylistTracks(playlistId string, next string) []Track {
 	links := resultJson.get("links")
 	newNext, ok := links.content["next"].(string)
 	if ok {
-		log.Println("Fetching next tracks from: ", newNext)
+		log.Println("Fetching next tracks from:", newNext)
 		return append(tracks, api.getPlaylistTracks(playlistId, newNext)...)
 	} else {
 		return tracks
@@ -225,11 +225,11 @@ func (api TidalApi) addTracks(playlistId string, trackIds []string) {
 	req, err := http.NewRequest("POST", endpoint+"?countryCode=DK", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 	check(err)
-	log.Println("Adding tracks with request: ", req)
+	log.Println("Adding tracks with request:", req)
 
 	_, response := doRequestWithRetry(api.Client, req, false)
 	if response.StatusCode != 201 {
-		log.Println("Could not add tracks: ", response)
+		log.Println("Could not add tracks:", response)
 	}
 }
 
@@ -270,6 +270,7 @@ func (api TidalApi) searchTrack(track Track, searchString string) string {
 	resultJson := JsonWrapper{result}
 
 	titleMap := make(map[string]string)
+	versionMap := make(map[string]string)
 	included := resultJson.getSlice("included")
 	for i := range len(included) {
 		item := makeJson(included[i])
@@ -279,19 +280,22 @@ func (api TidalApi) searchTrack(track Track, searchString string) string {
 		remix := regexp.MustCompile(`(?i)\sremix\s`)
 		if remix.MatchString(title+" "+version) && !remix.MatchString(track.Name) {
 			titleMap[item.getString("id")] = ""
+			versionMap[item.getString("id")] = ""
 		} else {
-			titleMap[item.getString("id")] = title
+			titleMap[item.getString("id")] = cleanTrackTitle(title)
+			versionMap[item.getString("id")] = cleanTrackTitle(version)
 		}
 	}
 
 	// Makes sure to look at the included tracks in the order it was given
 	data := resultJson.getSlice("data")
 	for i := range len(data) {
-		item := makeJson(data[i])
-		id := item.getString("id")
+		id := makeJson(data[i]).getString("id")
 		title := titleMap[id]
-
+		titleWithVersion := title + " " + versionMap[id]
 		if title != "" && approximateMatch(title, track.Name, 0.2) {
+			return id
+		} else if approximateMatch(titleWithVersion, track.Name, 0.2) {
 			return id
 		}
 	}
@@ -346,10 +350,12 @@ func (api TidalApi) getAlbum(albumId string, searchTrack Track, next string, tra
 			item := makeJson(included[i])
 			attributes := item.get("attributes")
 			if item.getString("type") == "artists" {
-				artists = append(artists, attributes.getString("name"))
+				artist := attributes.getString("name")
+				artists = append(artists, artist)
+				artistMatchFound = stringMatch(artist, searchTrack.Artist)
 			}
-			if stringMatch(artists[len(artists)-1], searchTrack.Artist) {
-				artistMatchFound = true
+			if artistMatchFound {
+				break
 			}
 		}
 
