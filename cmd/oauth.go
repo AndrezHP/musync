@@ -36,16 +36,17 @@ func getToken(config *oauth2.Config, ctx context.Context, apiUrl string, tokenPa
 		token, err = readTokenFromFile(tokenPath)
 		Check(err)
 	} else {
+		var verifierCode string
+		if pkce {
+			verifierCode = oauth2.GenerateVerifier()
+		}
 		handler := OAuthHandler{
 			config,
 			ctx,
 			make(chan *oauth2.Token),
 			apiUrl,
 			port,
-			"",
-		}
-		if pkce {
-			handler.VerifierCode = oauth2.GenerateVerifier()
+			verifierCode,
 		}
 		token = handler.getInitToken()
 		saveTokenToFile(token, tokenPath)
@@ -98,7 +99,7 @@ func (oauth OAuthHandler) getInitToken() *oauth2.Token {
 		oauth.Ctx = context.WithValue(oauth.Ctx, oauth2.HTTPClient, tlsClient)
 
 		var url string
-		if oauth.VerifierCode == "" {
+		if oauth.VerifierCode != "" {
 			url = oauth.Config.AuthCodeURL("state", oauth2.S256ChallengeOption(oauth.VerifierCode))
 		} else {
 			url = oauth.Config.AuthCodeURL("state", oauth2.AccessTypeOffline)
