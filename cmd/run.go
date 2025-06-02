@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,8 +10,28 @@ import (
 
 func Run() {
 	spotify := NewSpotifyApi()
-	userId := spotify.GetCurrentUserId()
-	playlists := spotify.GetUserPlaylists(userId, 0)
+	log.Println("Finding Spotify Playlists...")
+	spotifyUser := spotify.GetCurrentUserId()
+	spotifyPlaylists := spotify.GetUserPlaylists(spotifyUser, 0)
+
+	tidal := NewTidalApi()
+	log.Println("Finding Tidal playlists...")
+	tidalUser := tidal.GetCurrentUserId()
+	tidalPlaylists := tidal.GetUserPlaylists(tidalUser, "")
+
+	var playlists []Playlist
+	for _, playlist := range spotifyPlaylists {
+		var existsAlready = false
+		for _, cmp := range tidalPlaylists {
+			if playlist.Name == cmp.Name {
+				existsAlready = true
+				break
+			}
+		}
+		if !existsAlready {
+			playlists = append(playlists, playlist)
+		}
+	}
 
 	model := initialModel(playlists)
 	_, err := tea.NewProgram(model).Run()
@@ -38,7 +59,7 @@ func (m model) View() string {
 
 		s += fmt.Sprintf("%s [%s] (%s) %s\n", cursor, checked, strconv.Itoa(choice.Length), choice.Name)
 	}
-	return s + "\nPress q to quit.\n"
+	return s + "\n| q - quit | C-a - select all | SPC - select | ENTER - start |\n"
 }
 
 func initialModel(playlists []Playlist) model {
@@ -63,6 +84,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
+			m.selected = nil
 			return m, tea.Quit
 		case "up", "k":
 			if m.cursor > 0 {
@@ -72,8 +94,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.choices)-1 {
 				m.cursor++
 			}
-		case "enter", " ":
-			m.selected[m.cursor] = struct{}{}
+		case " ":
+			_, ok := m.selected[m.cursor]
+			if ok {
+				delete(m.selected, m.cursor)
+			} else {
+				m.selected[m.cursor] = struct{}{}
+			}
+		case "ctrl+a":
+			if len(m.selected) == len(m.choices) {
+				m.selected = make(map[int]struct{})
+			} else {
+				for i := range len(m.choices) {
+					m.selected[i] = struct{}{}
+				}
+			}
+		case "enter":
 			return m, tea.Quit
 		}
 	}
