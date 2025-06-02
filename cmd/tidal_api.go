@@ -52,7 +52,7 @@ func (api TidalApi) GetUserPlaylists(userId string, next string) []Playlist {
 	var request *http.Request
 	if next == "" {
 		endpoint := api.Url + fmt.Sprintf("/playlists?filter[r.owners.id]=%s", userId)
-		req, err := http.NewRequest("GET", endpoint+"countryCode=DK", nil)
+		req, err := http.NewRequest("GET", endpoint+"&countryCode=DK", nil)
 		Check(err)
 		request = req
 	} else {
