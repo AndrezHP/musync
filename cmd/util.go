@@ -77,6 +77,7 @@ func DoRequest(client *http.Client, request *http.Request, printBody bool) (map[
 		return DoRequest(client, request, printBody)
 	}
 	if response.StatusCode >= 500 {
+		log.Println("Server error! Status", response.StatusCode)
 		time.Sleep(10 * time.Second)
 		return DoRequest(client, request, printBody)
 	}
@@ -115,7 +116,6 @@ func formatJsonString(body []byte) string {
 	return string(prettyJSON.Bytes())
 }
 
-// Error handling
 func Check(e error) {
 	if e != nil {
 		log.Println("ERROR:", e)
