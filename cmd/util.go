@@ -125,12 +125,16 @@ func Check(e error) {
 // regex
 func cleanString(input string) string {
 	binder := `(\s-\s)`
-	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,?/~\\|]`
+	symbols := `|\[.+\]|[\(\)@#$%^&*\[\]:;,¿?/~\\|]`
 	year := `|((20)\d{2})`
-	words := `|(?i)(re-*master(ed)*|version|reissue|\strio\s)`
+	words := `|(?i)(re-*master(ed)*|version|reissue|\strio\s|\squartet\s|\squintet\s)`
 	regex := regexp.MustCompile(binder + symbols + year + words)
 	var result = regex.ReplaceAllString(input, " ")
 	return regexp.MustCompile(`\s+`).ReplaceAllString(result, " ")
+}
+
+func cleanArtistName(input string) string {
+	return strings.TrimSpace(regexp.MustCompile(`(?i)\s(and|&|y)\s`).ReplaceAllString(input, " "))
 }
 
 func cleanTitle(input string) string {

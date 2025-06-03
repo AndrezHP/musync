@@ -44,7 +44,7 @@ func Run() {
 }
 
 func (m model) View() string {
-	s := "Pick a playlist to migrate to tidal:\n\n"
+	s := "Pick one or more playlists to migrate to tidal:\n\n"
 
 	for i, choice := range m.choices {
 		cursor := " "

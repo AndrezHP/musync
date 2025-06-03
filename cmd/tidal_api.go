@@ -209,35 +209,26 @@ func (api TidalApi) GetTracksBatch(trackIds []string, trackIndexMap map[string]D
 
 func (api TidalApi) TrackLookup(track Track) string {
 	log.Println("Album lookup for:", track)
-	var albumId = api.SearchAlbum(track, track.Album+" "+track.Artist)
+	var albumId = api.SearchAlbum(track, track.Album+" "+cleanArtistName(track.Artist))
 	var trackId = api.findTrackOnAlbum(track, albumId)
 	if trackId != "" {
 		log.Println("Succes:1")
 	}
 
 	if trackId == "" {
-		log.Println("Artist lookup for:", track)
-		albumId := api.findAlbumFromArtistLookup(track)
-		trackId = api.findTrackOnAlbum(track, albumId)
+		log.Println("Track lookup for:", track.Name, cleanArtistName(track.Artist))
+		trackId = api.SearchTrack(track, track.Name+" "+cleanArtistName(track.Artist))
 		if trackId != "" {
 			log.Println("Succes:2")
 		}
 	}
 
 	if trackId == "" {
-		log.Println("Track lookup for:", track.Name, track.Artist)
-		trackId = api.SearchTrack(track, track.Name+" "+track.Artist)
+		partialArtistName := getPartialName(cleanArtistName(track.Artist))
+		log.Println("Track lookup for:", track.Name, partialArtistName)
+		trackId = api.SearchTrack(track, track.Name+" "+partialArtistName)
 		if trackId != "" {
 			log.Println("Succes:3")
-		}
-	}
-
-	if trackId == "" {
-		log.Println("Track lookup for:", track.Name)
-		partialArtistName := getPartialName(track.Artist)
-		trackId = api.SearchTrack(track, partialArtistName)
-		if trackId != "" {
-			log.Println("Succes:4")
 		}
 	}
 	return trackId
@@ -463,58 +454,9 @@ func (api TidalApi) findTrackOnAlbum(searchTrack Track, albumId string) string {
 	}
 }
 
-func (api TidalApi) findAlbumFromArtistLookup(searchTrack Track) string {
-	searchString := cleanString(searchTrack.Artist)
-	endpoint := api.Url + "/searchResults/" + searchString + "/relationships/topHits"
-	req, err := http.NewRequest("GET", endpoint+"?countryCode=DK", nil)
-	Check(err)
-
-	var result, _ = DoRequest(api.Client, req, false)
-	data := JsonWrapper{result}.getSlice("data")
-	for i := range len(data) {
-		item := makeJson(data[i])
-		if item.getString("type") == "artists" {
-			return api.findAlbumForArtist(searchTrack, item.getString("id"))
-		}
-	}
-	return ""
-}
-
-func (api TidalApi) findAlbumForArtist(searchTrack Track, artistId string) string {
-	endpoint := api.Url + "/artists/" + artistId + "/relationships/albums"
-	var req, err = http.NewRequest("GET", endpoint+"?countryCode=DK&include=albums", nil)
-	Check(err)
-
-	var searchCount = 0
-	for searchCount < 3 {
-		searchCount++
-		result, _ := DoRequest(api.Client, req, false)
-		resultJson := JsonWrapper{result}
-		included := resultJson.getSlice("included")
-		for i := range len(included) {
-			item := makeJson(included[i])
-			title := item.get("attributes").getString("title")
-			if stringMatch(title, searchTrack.Album) {
-				log.Println("Album match!")
-				return item.getString("id")
-			}
-		}
-
-		links := resultJson.get("links")
-		newNext, ok := links.content["next"].(string)
-		if ok {
-			log.Println("Next albums from:", newNext, ", search count:", searchCount)
-			req, err = http.NewRequest("GET", api.Url+newNext, nil)
-		} else {
-			return ""
-		}
-	}
-	return ""
-}
-
 func getPartialName(name string) string {
 	filtered := regexp.MustCompile(`(?i)(the\s)`).ReplaceAllString(name, " ")
-	splitName := strings.Split(filtered, " ")
+	splitName := strings.Split(strings.TrimSpace(filtered), " ")
 	partialSplit := splitName[:(min(2, len(splitName)))]
 	return strings.Join(partialSplit, " ")
 }
