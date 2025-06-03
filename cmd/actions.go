@@ -15,10 +15,10 @@ func SpotifyPlaylistToTidal(playlistId string, newPlaylistName string) {
 	for i, track := range tracks {
 		log.Println("Index:", i, "Lookup for track:", track)
 		var id = tidalApi.TrackLookup(track)
-		if id == "" {
-			notFound = append(notFound, track)
-		} else {
+		if id != "" && len(id) < 15 {
 			trackIds = append(trackIds, id)
+		} else {
+			notFound = append(notFound, track)
 		}
 	}
 
